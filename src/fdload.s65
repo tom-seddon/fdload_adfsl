@@ -1,0 +1,257 @@
+                .include "../submodules/beeb/include/beeb.s65"
+
+;-------------------------------------------------------------------------
+
+ZP_BASE=$80
+CODE_BASE=$2800
+
+;-------------------------------------------------------------------------
+
+; BIT_immediate=$89
+; BRA_relative=$80
+
+BIT_immediate=$89
+BRA_relative=$80
+STA_absolute=$8d
+RTI_implicit=$40
+                
+;-------------------------------------------------------------------------
+
+                .virtual $fe28
+fdc: .block
+status:
+command:
+                .fill 1
+track:
+                .fill 1
+sector:
+                .fill 1
+data:
+                .fill 1
+                .endblock
+                .endvirtual
+
+                .virtual $fe24
+fdc_control: .block
+drive0=1
+drive1=2
+not_reset=4
+side2=16
+not_dden=32
+                .endblock
+                .endvirtual                
+                
+;-------------------------------------------------------------------------
+
+*=ZP_BASE
+                .dsection zp
+                .cerror *>ZP_BASE+256
+
+*=CODE_BASE
+                .dsection code
+                .cerror *>CODE_BASE+256
+
+;-------------------------------------------------------------------------
+
+; 0xxx = enable spin-up sequence
+h_flag_value=%0000
+                
+; 1xx = verify dest track
+; x11 = slowest step time (1770=30 ms; 1772=6 ms)
+type_i_flags=h_flag_value|%111
+
+; ; 0xx = no 30 ms settling delay
+; type_ii_flags=h_flag_value|%000
+                
+;-------------------------------------------------------------------------
+
+                .section zp
+                ; bit 0 set if busy.
+command_status: .fill 1
+
+num_nmis: .fill 1
+                
+read_byte_addr: .fill 2
+                
+read_byte_counter: .fill 2
+                .endsection zp
+                
+;-------------------------------------------------------------------------
+
+                .section code
+
+                ; TOC
+                jmp init        ; +0
+                jmp restore     ; +3
+                jmp seek        ; +6
+
+;-------------------------------------------------------------------------
+
+init:                
+                jsr cancel
+
+                ; copy to $d01. $d00 is RTI, for now, and will get
+                ; fixed up as required.
+                ldx #size(nmi_routine)-1
+-
+                lda nmi_routine,x
+                sta $d01,x
+                dex
+                bpl -
+
+                stz command_status
+                stz num_nmis
+
+                rts
+
+;-------------------------------------------------------------------------
+
+cancel:
+                lda #RTI_implicit
+                sta $d00
+                lda #%11010000  ; Type IV Force Interrupt
+                sta fdc.command
+                .cerror *!=wait_32us
+
+; cycles=8+2N+3(N-1)+2+6
+; cycles=8+2N+3(N-1)+8
+; cycles=8+2N+3N-3+8
+; cycles=8+2N+3N+5
+; cycles=8+5N+5
+; cycles=13+5N
+; cycles-13=5N
+; (cycles-13)/5=N
+;
+; 64/13=10.2
+;
+; But that's only 1 cycle out. An extra NOP will do it (and then
+; some). And 64 cycles at double density is conservative anyway.
+                
+wait_32us:                      ; +6 = 6
+                lda #10         ; +2 = 8
+wait_32us_loop:
+                dec a              ; 2N, +20 = 28
+                bne wait_32us_loop ; 3(N-1)+2, +29 = 57
+                nop                ; +2 = 59
+                rts                ; +6 = 65
+
+;-------------------------------------------------------------------------
+
+restore:
+                ldy #%00000000|type_i_flags ; Type I Restore
+                clc                         ; select side 0
+                .cerror *!=perform_seek_type_command
+
+; Y=Type I command to perform
+perform_seek_type_command:
+                ldx #BRA_relative
+                jsr prepare_fdc_and_nmi_routine_for_command
+                sty fdc.command
+                .cerror *!=wait_for_command
+wait_for_command:
+                lda command_status
+                lsr a
+                bcs wait_for_command
+                rts
+
+;-------------------------------------------------------------------------
+
+; A = logical track.
+;
+; Will also select appropriate side.
+
+seek:
+                lsr a           ; C=disk side
+                sta fdc.data    ; select dest phys track for seek
+
+                ldy #%00010000|type_i_flags ; Type I Seek
+                bra perform_seek_type_command
+
+;-------------------------------------------------------------------------
+
+; A = start sector on current track
+;
+; read_byte_addr.w = where to write the data
+;
+; read_byte_counter.w = negated number of bytes to read
+
+read:
+                sta fdc.sector
+
+                ; don't update the FDC control reg. The restore/seek
+                ; will have set it to the right value.
+                ldx #BIT_immediate
+                jsr prepare_nmi_routine_for_command
+
+                lda #%10010000|h_flag_value
+                sta fdc.command
+
+                jsr wait_for_command
+
+                rts
+                
+                
+;-------------------------------------------------------------------------
+
+; X=opcode to poke into nmi_routine.branch
+; C=0 to select side 0; C=1 to select side 2
+prepare_fdc_and_nmi_routine_for_command:
+                lda #fdc_control.drive0|fdc_control.not_reset
+                bcc +
+                ora #fdc_control.side2
++
+                sta fdc_control
+                .cerror *!=prepare_nmi_routine_for_command
+prepare_nmi_routine_for_command:
+                ; fix up the NMI routine.
+                lda #STA_absolute
+                sta $d00
+                stx nmi_routine.branch
+
+                ; indicate thing is busy.
+                sec
+                rol command_status
+                rts
+
+;-------------------------------------------------------------------------
+
+nmi_routine: .block
+                ; $d00 is looked after manually. See comments above.
+                .logical $d01
+                .word relda+1   ; operand for STA absolute
+                inc num_nmis
+                ; replace with $89 (BIT immediate, 2 cycles) if using
+                ; the read data NMI routine.
+branch:
+                bra end_command
+                lda fdc.status
+                bit #%00011100  ; RnF/CRC/Lost Data errors
+                bne end_command ; 
+                lda fdc.data
+                sta (read_byte_addr)
+                inc read_byte_addr+0
+                bne got_read_byte_addr
+                inc read_byte_addr+1
+got_read_byte_addr:
+                inc read_byte_counter+0
+                bne got_read_byte_counter
+                inc read_byte_counter+1
+                bne got_read_byte_counter
+                ; Read done.
+                jsr cancel
+got_read_byte_counter:
+nmi_done:
+relda: lda #$ff
+                rti
+
+end_command:
+                lda fdc.status
+                sta command_status
+                bra nmi_done
+                
+                .endlogical
+                .endblock
+
+                .endsection
+
+;-------------------------------------------------------------------------

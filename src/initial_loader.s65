@@ -1,0 +1,57 @@
+                .include "../submodules/beeb/include/beeb.s65"
+
+*=$70
+                .dsection zp
+                .cerror *>$90
+
+*=$2000
+                .dsection code
+                .cerror *>$3000
+
+;-------------------------------------------------------------------------
+
+                .section zp
+                .endsection
+
+;-------------------------------------------------------------------------
+
+                .section code
+
+start:
+                lda #$77        ; OSBYTE close any spool/exec files
+                jsr osbyte
+
+                ; The loader gets poked into memory from BASIC, so it
+                ; could be running in the 2nd processor. Don't (yet?)
+                ; bother trying to sort this out.
+                lda #$ea
+                ldx #$00
+                ldy #$ff
+                jsr osbyte
+
+                cpx #0
+                beq tube_ok
+
+                brk
+                .byte 255
+                .text "Not compatible with 6502 second processor"
+                .byte 0
+
+tube_ok:
+                ldx #0
+-
+                lda message,x
+                jsr oswrch
+                inx
+                cpx #size(message)
+                bne -
+                rts
+
+message: .block
+                .byte 22,7
+                .text "Hello",10,13
+                .endblock
+                
+                .endsection
+
+;-------------------------------------------------------------------------

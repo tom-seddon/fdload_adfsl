@@ -1,0 +1,338 @@
+* dir-locals
+
+#+begin_src elisp
+  ((nil . ((compile-command . "cd ~/github/adfsl_fixed_layout && make _tom"))))
+#+end_src
+
+* ADFS Stuff
+
+https://mdfs.net/Docs/Comp/Disk/Format/ADFS
+
+For ADFS L:
+
+2*80*16=2560 sectors on disk
+
+-2 for fixed metadata overhead=2558 sectors
+
+-5 for root directory=2553 sectors
+
+2553*256=653568 bytes
+
+* Addressing
+
+The disk has 2 sides, one per head, H0 and H1. Each side has 80
+tracks, T0-T79, and each track has 16 sectors, S0-S15.
+
+The disk has 160 logical tracks, L0-L159, arranged physically in head
+then track order (so indeed the other way round from how ADFS logical
+sectoring works). So L0 is T0 H0, L1 is T0 H1, L2 is T1 H0 - and so
+on.
+
+Obviously the track is then an 8-bit value. Shift left 1 to find the
+physical track number for FDC purposes.
+
+** TOC table
+
+Maximum likely read is $d2 sectors, i.e., filling all of RAM from
+$0e00 to $dfff. 
+
+Each item has a start logical track (8 bits, 0-159), a start sector,
+(4 bits, 0-15), and a byte count (16 bits).
+
+Reading proceeds as a sequence of multi-sector reads. Seek to physical
+track, select side, do multi-read from start sector, with byte count
+suitable for that track's portion of the read. NMI routine bumps byte
+counter as it goes, and cancels the command once done.
+
+If track done with still more to do, bump logical track and set sector
+to 0 and go again.
+
+* code...
+
+#+begin_src 6502-asm
+  nmi:
+                  sta relda+1
+                  lda fdc_data
+  dest=*+1
+                  sta (zdest)
+                  inc zdest+0
+                  bne +
+                  inc zdest+1
+  +
+                  inc znleft+0
+                  bne +
+                  inc znleft+1
+                  beq cancel
+  +
+  done:
+  relda:
+                  lda #$ff
+                  rti
+
+  cancel:
+                  
+#+end_src
+
+* !BOOT encoding
+
+| Case    | bol                     | !str                    | str                      |
+|---------+-------------------------+-------------------------+--------------------------|
+| <ch>    | 11 - :$&XXXX="<ch>      | 2 - "<ch>               | 1 - <ch>                 |
+| CHR$&xx | 15 - :$&XXXX=CHR$&xx    | 9 - +CHR$&xx            | 9 - "+CHR$&xx            |
+| "       | 12 - :$&XXXX="""        | 3 - """                 | 2 - ""                   |
+| \!      | 18 - :\!&XXXX=&12345678 | 17 - :\!&XXXX=&12345678 | 18 - ":\!&XXXX=&12345678 |
+
+
+* zx02 decompression
+
+: ; De-compressor for ZX02 files
+: ; ----------------------------
+: ;
+: ; Decompress ZX02 data (6502 optimized format), optimized for speed
+: ;  166 bytes code, 48.0 cycles/byte in test file.
+: ;
+: ; Compress with:
+: ;    zx02 input.bin output.zx0
+: ;
+: ; (c) 2022-2025 DMSC
+: ; (c) 2025 Colin Leroy-Mira
+: ; Code under MIT license, see LICENSE file.
+: 
+: 
+: ZP=$80
+: 
+: offset_hi       equ ZP+0
+: ZX0_src         equ ZP+1
+: ZX0_dst         equ ZP+3
+: bitr            equ ZP+5
+: pntr            equ ZP+6
+: 
+:             ; Initial values for the de-compressor, the values are copied to
+:             ; the ZP locations at the initialization:
+: zx0_ini_block
+:             .by $00     ; Hi byte of the initial offset-1.
+:             .by <comp_data, >comp_data  ; Address of data to decompress.
+:             .by <out_addr, >out_addr    ; Address to place decompressed data
+:             .by $80     ; Initial value for the bit reservoir. Don't ever change.
+:             .by $ff     ; Low byte of the initial offset - 1 EOR 255.  The value
+:                         ; $FF means an initial offset of 1 byte, this is the
+:                         ; default value. See README for the explanation of the
+:                         ; '-o' option.
+: 
+: ;--------------------------------------------------
+: ; Decompress ZX0 data (6502 optimized format)
+: ;
+: ; Reads data from 'comp_data' and writes the result to 'out_addr', until the
+: ; compressed data ends.
+: 
+: full_decomp
+
+Copy init block into the ZP working area.
+
+:               ; Get initialization block
+:               ldy #7
+: 
+: copy_init     ldx zx0_ini_block-1, y
+:               stx offset_hi-1, y
+:               dey
+:               bne copy_init
+
+always taken. X=MSB of ((initial offset)-1).
+
+:               beq decode_literal
+: 
+: cop0_inc_high
+:               inc   ZX0_src+1
+:               inc   ZX0_dst+1
+:               dex
+:               bne   cop0
+:               beq   cop0_done
+: 
+: ; Decode literal: Copy next N bytes from compressed file
+: ;    Elias(length)  byte[1]  byte[2]  ...  byte[N]
+: decode_literal
+:               inx
+:               jsr   get_elias
+
+Copy X bytes. X bytes are consumed from the compressed data.
+
+: 
+: cop0          lda   (ZX0_src),y
+:               sta   (ZX0_dst),y
+:               iny
+:               beq   cop0_inc_high
+:               dex
+:               bne   cop0
+: cop0_done
+
+Advance pointers as per copy length. It was a literal copy, so same
+amount needs adding to both.
+
+:               ; Update pointers from Y
+:               tya
+:               clc
+:               adc   ZX0_src
+:               sta   ZX0_src
+:               bcc   @+
+:               inc   ZX0_src+1
+:               clc
+: 
+: @             tya
+:               adc   ZX0_dst
+:               sta   ZX0_dst
+:               bcc   @+
+:               inc   ZX0_dst+1
+: @             ; Set Y back to expected
+:               ldy   #$00
+: 
+
+??? - will the reservoir definitely have a valid bit here? Presumably
+the encoder can arrange for that though?
+
+:               asl   bitr
+:               bcs   dzx0s_new_offset
+: 
+: ; Copy from last offset (repeat N bytes from last offset)
+: ;    Elias(length)
+
+Fetch encoded length in X.
+
+:               inx
+:               jsr   get_elias
+
+
+
+: dzx0s_copy
+:               lda   ZX0_dst+1
+:               sbc   offset_hi  ; C=0 from get_elias
+:               sta   pntr+1
+: 
+
+
+
+: cop1
+:               ldy   ZX0_dst    ; Align dest pointer
+:               lda   #0
+:               sta   ZX0_dst
+: cop1_cont
+:               lda   (pntr), y
+:               sta   (ZX0_dst),y
+:               iny
+:               beq   cop1_inc_high
+:               dex
+:               bne   cop1_cont
+: cop1_done
+:               sty   ZX0_dst    ; Update dest pointer
+:               ldy   #0
+:               asl   bitr
+:               bcc   decode_literal
+: 
+: ; Copy from new offset (repeat N bytes from new offset)
+: ;    Elias(MSB(offset))  LSB(offset)  Elias(length-1)
+: dzx0s_new_offset
+:               ; Read elias code for high part of offset
+:               inx
+:               jsr   get_elias
+:               beq   exit  ; Read a 0, signals the end
+:               ; Decrease and divide by 2
+:               dex
+:               txa
+:               lsr   @
+:               sta   offset_hi
+: 
+:               ; Get low part of offset, a literal 7 bits
+:               lda   (ZX0_src), y
+:               inc   ZX0_src
+:               bne   @+
+:               inc   ZX0_src+1
+: @
+:               ; Divide by 2
+:               ror   @
+:               eor   #$ff
+:               sta   pntr
+: 
+:               ; And get the copy length.
+:               ; Start elias reading with the bit already in carry:
+:               ldx   #1
+:               jsr   elias_skip1
+: 
+:               inx
+:               bcc   dzx0s_copy
+: 
+: ; Read an elias-gamma interlaced code.
+: ; ------------------------------------
+
+https://en.wikipedia.org/wiki/Elias_gamma_coding
+
+But the unary part and the data are interleaved. No need to maintain a
+count. 
+
+
+
+: elias_get     ; Read next data bit to result
+
+bitr starts at $80.
+
+:               asl   bitr
+
+Shift bit into working value.
+
+:               rol   @
+:               tax
+: 
+: get_elias
+:               ; Get one bit
+
+bitr always a dummy bit set. If it ever becomes 0, all bits have been
+shifted out. The bit read was the dummy bit, so it should be ignored.
+
+:               asl   bitr
+
+Taken if C is a valid shifted-out bit.
+
+:               bne   elias_skip1
+
+: 
+:               ; Read new bit from stream
+:               lda   (ZX0_src), y
+:               inc   ZX0_src
+:               bne   @+
+:               inc   ZX0_src+1
+: @             ;sec   ; not needed, C=1 guaranteed from last bit
+
+Pull out the next bit, shift in the dummy bit, update the bit
+reservoir. So the value ends up like this.
+
+:   7   6   5   4   3   2   1   0      C
+: +---+---+---+---+---+---+---+---+  +---+
+: |D6 |D5 |D4 |D3 |D2 |D1 |D0 | 1 |  |D7 |
+: +---+---+---+---+---+---+---+---+  +---+
+
+:               rol   @
+:               sta   bitr
+: 
+: elias_skip1
+
+A=working value. If entered here, X is the working value.
+
+:               txa
+
+If a 1 bit was read, put 1 more bit into the working value.
+
+:               bcs   elias_get
+
+If a 0 bit was read, the number has been read. (The code is inverted
+compared to the wikipedia page.)
+
+
+:               ; Got ending bit, stop reading
+: exit
+:               rts
+: 
+: cop1_inc_high
+:               inc   ZX0_dst+1
+:               inc   pntr+1
+:               dex
+:               bne   cop1_cont
+:               beq   cop1_done
+: 
