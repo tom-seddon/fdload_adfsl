@@ -47,12 +47,15 @@ BEEB_BUILD:=$(BEEBLINK_VOLUME)/Z
 
 .PHONY: build
 build: _output_folders
+# Create the files list.
+	$(_V)$(PYTHON) "bin/boot_builder.py" constants --output "$(BUILD)/files_list.generated.s65"
+
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD
-	$(_V)$(MAKE) _asm PC=initial_loader BEEB=LOADER1
+	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 
-# Convert the initial loader to something that can be *EXEC'd.
-	$(_V)$(PYTHON) "bin/encode_prg.py" -o "$(BUILD)/!boot.dat" "$(BUILD)/initial_loader.prg"
+# Build the big file.
+	$(_V)$(PYTHON) "bin/boot_builder.py" build --loader0 "$(BUILD)/loader0.prg" --output-data "$(BUILD)/!boot.dat" --output-toc "$(BUILD)/!boot.toc.json"
 
 # Form ADFS disk contents in $(DISK_CONTENTS): !BOOT and its .inf.
 	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BUILD)/!boot.dat"
@@ -63,9 +66,6 @@ build: _output_folders
 
 # Copy the ADFS disk image somewhere the BBC can see it too.
 	$(_V)$(SHELLCMD) copy-file "$(BUILD)/adfsl_fixed_layout.adl" "$(BEEB_BUILD)/$$.ADFSL_DISK"
-
-
-
 
 ##########################################################################
 ##########################################################################
@@ -82,6 +82,7 @@ clean:
 _output_folders:
 	$(_V)$(SHELLCMD) mkdir "$(BUILD)"
 	$(_V)$(SHELLCMD) mkdir "$(DISK_CONTENTS)"
+	$(_V)$(SHELLCMD) mkdir "$(BEEB_BUILD)"
 
 ##########################################################################
 ##########################################################################
