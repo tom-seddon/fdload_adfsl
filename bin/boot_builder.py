@@ -61,6 +61,18 @@ def fatal(msg):
 ##########################################################################
 ##########################################################################
 
+PRG=collections.namedtuple('PRG','addr data')
+
+def load_prg(path):
+    with open(path,'rb') as f: data=f.read()
+
+    if len(data)<3: fatal('file too small to be a C64 .PRG: %s'%path)
+
+    return PRG(addr=data[0]|data[1]<<8,data=bytearray(data[2:]))
+
+##########################################################################
+##########################################################################
+
 def get_smaller_str(x):
     xs='&%X'%x
     
@@ -71,20 +83,17 @@ def get_smaller_str(x):
     return ds if len(ds)<len(xs) else xs
 
 def get_exec_part(options):
-    with open(options.loader0_path,'rb') as f: data=f.read()
+    loader0=load_prg(options.loader0_path)
 
-    if len(data)<3:
-        fatal('loader0 file too small: %s'%options.input_path)
-
-    load_addr=data[0]|data[1]<<8
-    data=bytearray(data[2:])
-
-    while len(data)%4!=0: data.append(0)
+    while len(loader0.data)%4!=0: loader0.data.append(0)
 
     lines=[]
-    for i in range(0,len(data),4):
-        addr=load_addr+i
-        dword=data[i+0]|data[i+1]<<8|data[i+2]<<16|data[i+3]<<24
+    for i in range(0,len(loader0.data),4):
+        addr=loader0.addr+i
+        dword=(loader0.data[i+0]|
+               loader0.data[i+1]<<8|
+               loader0.data[i+2]<<16|
+               loader0.data[i+3]<<24)
         stmt='!%s=%s'%(get_smaller_str(addr),get_smaller_str(dword))
 
         # max BASIC 4 line length is $ee (see
@@ -95,11 +104,11 @@ def get_exec_part(options):
             lines[-1]+=':'+stmt
         else: lines.append(stmt)
 
-    lines.append('CALL%s'%get_smaller_str(load_addr))
+    lines.append('CALL%s'%get_smaller_str(loader0.addr))
 
     result=bytearray()
     result+=b'*BASIC\r'
-    if options.vdu21: result+='VDU21\r'
+    if options.vdu21: result+=b'VDU12,23,1,0,0,0,0,0,0,0,0:PRINT"LOADING...";:VDU21\r'
     for line_index,line in enumerate(lines):
         result+=line.encode('ascii')
         # no harm in having the VDU6 always there
@@ -132,11 +141,11 @@ class TOCEntry:
     ltrack:int
     sector:int
     num_bytes:int
-# TOCEntry=collections.namedtuple('TOCEntry','ident path index ltrack sector num_bytes')
+
+##########################################################################
+##########################################################################
     
 def build_cmd(files,options):
-    output_data=bytearray()
-    
     exec_data=get_exec_part(options)
 
     # Provided the *EXEC part is smaller than this, it will fit into
@@ -146,15 +155,13 @@ def build_cmd(files,options):
     # (The ADFS metadata is 7 sectors, so there's 9 sectors left in
     # track 0.)
     pad_and_check_budget(exec_data,9*256,'loader8 in *EXEC form')
-    output_data+=exec_data
 
+    fdload_data=bytearray()
+    
     # Space for loader1.
-    loader1_data=bytearray()
-    pad_and_check_budget(loader1_data,4096,'loader1 data')
-    output_data+=loader1_data
-
-    # should have filled up to the start of H0 T0 S0.
-    assert len(output_data)==(9+16)*256,len(output_data)
+    loader1=load_prg(options.loader1_path)
+    pad_and_check_budget(loader1.data,4096,'loader1 data')
+    fdload_data+=loader1.data
 
     toc=[]
     lsector=32
@@ -174,11 +181,30 @@ def build_cmd(files,options):
                             sector=lsector%16,
                             num_bytes=file_size_bytes))
 
-        output_data+=file_data
+        fdload_data+=file_data
         lsector+=len(file_data)//256
 
-    max_output_data_size=(2*80*16-7)*256
-    pad_and_check_budget(output_data,(2*80*16-7)*256,'output big file')
+    max_fdload_data_size=(2*80-1)*16*256
+    pad_and_check_budget(fdload_data,max_fdload_data_size,'output big file')
+
+    # The output big file is in fdload logical sector order. Rearrange
+    # so that it is in the ADFS sector order expected by adf_create.
+    output_data=bytearray()
+    for side in range(2):
+        for track in range(80):
+            if track==0 and side==0:
+                # there is no fdload data in this area.
+                continue
+
+            ltrack=track*2+side-1
+            assert ltrack>=0 and ltrack<159
+            
+            i=ltrack*4096
+            output_data+=fdload_data[i:i+4096]
+
+    # Prepend the 9 sectors of loader0.
+    output_data=exec_data+output_data
+    assert len(output_data)==(2*80*16-7)*256
 
     if options.output_data_path is not None:
         with open(options.output_data_path,'wb') as f: f.write(output_data)
@@ -220,6 +246,7 @@ def main(argv):
 
     build_subparser=add_subparser('build',build_cmd,help='''generate big data file''')
     build_subparser.add_argument('--loader0',metavar='FILE',required=True,dest='loader0_path',help='''read loader0 code from %(metavar)s, a C64 .prg''')
+    build_subparser.add_argument('--loader1',metavar='FILE',required=True,dest='loader1_path',help='''read loader1 code from %(metavar)s, a C64 .prg''')
     build_subparser.add_argument('--vdu21',action='store_true',help='''add a VDU21 in the *EXECable part''')
     build_subparser.add_argument('--output-data',metavar='FILE',dest='output_data_path',help='''write output to %(metavar)s''')
     build_subparser.add_argument('--output-toc',metavar='FILE',dest='output_toc_path',help='''write TOC JSON to %(metavar)s''')

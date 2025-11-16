@@ -1,0 +1,31 @@
+                .include "../submodules/beeb/include/beeb.s65"
+                .include "shared_constants.s65"
+
+*=$70
+                .dsection zp
+                .cerror *>$90
+
+*=loader1_base
+                .dsection code
+                .cerror *>loader1_base+loader1_size
+
+;-------------------------------------------------------------------------
+
+                .section zp
+                .endsection
+
+;-------------------------------------------------------------------------
+
+                .section code
+start:
+                lda #65
+                jsr oswrch
+                rts
+
+                .cerror *>loader1_base+loader1_size-16
+*=loader1_base+loader1_size-16
+                .text loader1_guid
+                
+                .endsection code
+
+;-------------------------------------------------------------------------

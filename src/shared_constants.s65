@@ -1,0 +1,20 @@
+disjoint: .function _abegin,_aend,_bbegin,_bend
+                .cerror !((_aend)>=(_abegin))
+                .cerror !((_bend)>=(_bbegin))
+                .endfunction (_aend)<=(_bbegin)||(_abegin)>=(_bend)
+
+;-------------------------------------------------------------------------
+
+loader0_max_size=512
+loader1_size=4096
+                
+;-------------------------------------------------------------------------
+                
+loader0_base=$2e00
+loader1_base=$1e00
+                .cerror !disjoint(loader0_base,loader0_base+loader0_max_size,loader1_base,loader1_base+loader1_size)
+
+;-------------------------------------------------------------------------
+
+loader1_guid=x"59848C48B8814F1188EB2BA360845286"
+                

@@ -1,12 +1,18 @@
                 .include "../submodules/beeb/include/beeb.s65"
+                .include "shared_constants.s65"
 
 *=$70
                 .dsection zp
                 .cerror *>$90
 
-*=$2000
+
+;-------------------------------------------------------------------------
+
+; The !BOOT *EXEC encoding is super-inefficient, but 512 bytes can
+; probably be guaranteed.
+*=loader0_base
                 .dsection code
-                .cerror *>$3000
+                .cerror *>loader0_base+loader0_max_size
 
 ;-------------------------------------------------------------------------
 
@@ -14,7 +20,11 @@
                 .endsection
 
 ;-------------------------------------------------------------------------
-
+;
+; Close !BOOT, then check for basic prerequisites and crap out if
+; required. Then read track 0 side 1 (easy enough to do with OSWORD
+; $72...), do a basic consistency check, then jump to its entry point.
+                
                 .section code
 
 start:
@@ -24,7 +34,7 @@ start:
                 ; The loader gets poked into memory from BASIC, so it
                 ; could be running in the 2nd processor. Don't (yet?)
                 ; bother trying to sort this out.
-                lda #$ea
+                lda #$ea        ; OSBYTE read/write Tube presence
                 ldx #$00
                 ldy #$ff
                 jsr osbyte
@@ -38,19 +48,70 @@ start:
                 .byte 0
 
 tube_ok:
-                ldx #0
--
-                lda message,x
-                jsr oswrch
-                inx
-                cpx #size(message)
-                bne -
-                rts
+                ; Try to load loader1 from disk.
+                ldx #<read_pblock
+                ldy #>read_pblock
+                lda #$72        ; OSWORD read/write ADFS sectors
+                jsr osword
 
-message: .block
-                .byte 22,7
-                .text "Hello",10,13
+                lda read_pblock
+                beq read_succeeded
+
+                pha
+                lsr a
+                lsr a
+                lsr a
+                lsr a
+                tax
+                lda xdigits,x
+                sta adfs_error_code+0
+                pla
+                and #$0f
+                tax
+                lda xdigits,x
+                sta adfs_error_code+1
+                
+                brk
+                .byte 255
+                .text "ADFS read error: &"
+adfs_error_code:
+                .text "xx"
+                .byte 0
+
+read_succeeded:
+                ldx #15
+-
+                lda loader1_base+loader1_size-16,x
+                cmp expected_loader1_guid,x
+                bne unexpected_guid
+                dex
+                bpl -
+
+                ; well, all looks vaguely in place...
+                jmp loader1_base
+
+unexpected_guid:
+                brk
+                .byte 255
+                .text "Unexpected loader contents"
+                .byte 0
+                
+xdigits: .text "0123456789ABCDEF"
+                
+read_pblock: .block
+sector=80*16
+                .byte 0
+                .dword loader1_base
+                .byte $08       ; read
+                .byte 0         ; drive OR bits=0; sector# bits 16-21=0
+                .byte >sector   ; sector# bits 8-15
+                .byte <sector   ; sector# bits 0-7
+                .byte 16        ; sector count
+                .byte 0         ; unused
+                .dword 0        ; data length (unused for reads)
                 .endblock
+
+expected_loader1_guid: .text loader1_guid
                 
                 .endsection
 

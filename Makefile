@@ -53,9 +53,10 @@ build: _output_folders
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
+	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 
 # Build the big file.
-	$(_V)$(PYTHON) "bin/boot_builder.py" build --loader0 "$(BUILD)/loader0.prg" --output-data "$(BUILD)/!boot.dat" --output-toc "$(BUILD)/!boot.toc.json"
+	$(_V)$(PYTHON) "bin/boot_builder.py" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/!boot.dat" --output-toc "$(BUILD)/!boot.toc.json"
 
 # Form ADFS disk contents in $(DISK_CONTENTS): !BOOT and its .inf.
 	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BUILD)/!boot.dat"
