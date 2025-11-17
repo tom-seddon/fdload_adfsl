@@ -200,7 +200,12 @@ def build_cmd(files,options):
             assert ltrack>=0 and ltrack<159
             
             i=ltrack*4096
+            j=len(output_data)
             output_data+=fdload_data[i:i+4096]
+
+            # if track>=1:
+            #     output_data[j+0]=side
+            #     output_data[j+1]=track
 
     # Prepend the 9 sectors of loader0.
     output_data=exec_data+output_data

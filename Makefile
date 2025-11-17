@@ -51,7 +51,7 @@ build: _output_folders
 	$(_V)$(PYTHON) "bin/boot_builder.py" constants --output "$(BUILD)/files_list.generated.s65"
 
 # Assemble stuff
-	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD
+	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dinclude_test_hooks=true"
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 

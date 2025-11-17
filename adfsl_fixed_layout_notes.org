@@ -1,3 +1,5 @@
+#+STARTUP: overview
+
 * dir-locals
 
 #+begin_src elisp
@@ -336,3 +338,14 @@ compared to the wikipedia page.)
 :               bne   cop1_cont
 :               beq   cop1_done
 : 
+
+* timings
+
+Approx bytes/sec for reading each track of the disk in turn.
+
+| what                      | 6 ms | 12 ms |
+|---------------------------+------+-------|
+| for each side, each track | 9139 |  9000 |
+| for each track, each side | 9677 |  9666 |
+
+* eof
