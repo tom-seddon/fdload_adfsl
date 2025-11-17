@@ -4,3 +4,6 @@
 [submodule "submodules/beeb"]
 	path = submodules/beeb
 	url = https://github.com/tom-seddon/beeb
+[submodule "submodules/zx02"]
+	path = submodules/zx02
+	url = https://github.com/tom-seddon/zx02

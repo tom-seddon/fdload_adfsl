@@ -1,3 +1,5 @@
+#MAKEFLAGS+=--no-print-directory
+
 ##########################################################################
 ##########################################################################
 
@@ -9,6 +11,15 @@ else
 UNAME:=$(shell uname -s)
 PYTHON:=/usr/bin/python3
 TASS:=64tass
+endif
+
+##########################################################################
+##########################################################################
+
+ifeq ($(UNAME),Darwin)
+GNU_MAKE:=gmake --no-print-directory
+else
+GNU_MAKE:=$(MAKE)
 endif
 
 ##########################################################################
@@ -42,11 +53,24 @@ BEEBLINK_VOLUME:=$(PWD)/beeb/adfsl_fixed_layout
 # Where BBC build output goes.
 BEEB_BUILD:=$(BEEBLINK_VOLUME)/Z
 
+# ZX02 stuff.
+ZX02_PATH:=$(PWD)/submodules/zx02
+ifeq ($(UNAME),Windows_NT)
+$(error TODO: zx02...)
+else
+ZX02:=$(ZX02_PATH)/build/zx02
+endif
+
 ##########################################################################
 ##########################################################################
 
 .PHONY: build
 build: _output_folders
+# Build prerequisites.
+ifneq ($(UNAME),Windows_NT)
+	$(_V)test -f "$(ZX02)" || (cd "$(ZX02_PATH)" && $(GNU_MAKE) all)
+endif
+
 # Create the files list.
 	$(_V)$(PYTHON) "bin/boot_builder.py" constants --output "$(BUILD)/files_list.generated.s65"
 
@@ -75,6 +99,11 @@ build: _output_folders
 clean:
 	$(_V)$(SHELLCMD) rm-tree "$(BUILD)"
 	$(_V)$(SHELLCMD) rm-tree "$(BEEB_BUILD)"
+ifneq ($(UNAME),Windows_NT)
+	$(_V)cd "$(ZX02_PATH)" && $(GNU_MAKE) clean
+# doesn't seem to do a proper clean?
+	$(_V)$(SHELLCMD) rm-tree "$(ZX02_PATH)/build"
+endif
 
 ##########################################################################
 ##########################################################################
