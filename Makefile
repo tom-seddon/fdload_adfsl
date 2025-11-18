@@ -119,6 +119,9 @@ _adfs_image:
 # Copy the ADFS disk image somewhere the BBC can see it too.
 	$(_V)$(SHELLCMD) copy-file "$(BUILD)/$(PC_IMAGE)" "$(BEEB_BUILD)/L.$(BBC_IMAGE)"
 
+# Create *EXEC file for quickly writing the disk image.
+	$(_V)$(SHELLCMD) echo-bytes -o "$(BEEB_BUILD)/!.$(BBC_IMAGE)" -e _ "CHAIN_22::BEEBLINK:0._24.IMAGER_22_0dWA0AA:Z.L.$(BBC_IMAGE)_0d"
+
 ##########################################################################
 ##########################################################################
 
