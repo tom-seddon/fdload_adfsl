@@ -48,6 +48,17 @@ start:
                 .byte 0
 
 tube_ok:
+                ; Cheap and cheerful Master detection.
+                lda $fe34
+                and #%11000000
+                beq master_ok
+
+                brk
+                .byte 255
+                .text "Requires Master 128/Master Compact"
+                .byte 0
+
+master_ok:
                 ; Try to load loader1 from disk.
                 ldx #<read_pblock
                 ldy #>read_pblock
@@ -87,7 +98,22 @@ read_succeeded:
                 dex
                 bpl -
 
-                ; well, all looks vaguely in place...
+                ; Well, all looks vaguely in place.
+                ;
+                ; Enter ROM filing system.
+                lda #$8d        ; OSBYTE select ROM filing system
+                jsr osbyte
+                
+                ; claim the NMI.
+                lda #$8f        ; OSBYTE issue paged ROM service request
+                ldx #$0c        ; NMI claim
+                ldy #$ff
+                jsr osbyte
+
+                ; (Don't bother storing the result anywhere. The
+                ; previous owner is not going to get it back.)
+
+                ; Run the loader.
                 jmp loader1_base
 
 unexpected_guid:
