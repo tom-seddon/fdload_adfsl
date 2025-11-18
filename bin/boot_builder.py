@@ -34,11 +34,18 @@ import sys,os,argparse,collections,json,dataclasses
 File=collections.namedtuple('File','path ident')
 
 # List of files that go into the build is defined here.
+#
+# Files will be arranged on disk in the specific order given.
 def make_files_list():
+    drive1='''beeb/adfsl_fixed_layout/1/'''
     files=[]
     for i in range(10):
-        files.append(File(path=r'''beeb/adfsl_fixed_layout/1/$.SCREEN%d'''%i,
+        files.append(File(path=os.path.join(drive1,'''$.SCREEN%d'''%i),
                           ident='screen%d'%i))
+
+    for i in range(2):
+        files.append(File(path=os.path.join(drive1,'''$.PSCREEN%d'''%i),
+                                            ident='pscreen%d'%i))
 
     return files
 
@@ -57,6 +64,12 @@ class JSONEncoder2(json.JSONEncoder):
 def fatal(msg):
     sys.stderr.write('FATAL: %s\n'%msg)
     sys.exit(1)
+
+##########################################################################
+##########################################################################
+
+def makedirs(path):
+    if not os.path.isdir(path): os.makedirs(path)
 
 ##########################################################################
 ##########################################################################
@@ -170,6 +183,8 @@ def build_cmd(files,options):
     fdload_data+=loader1.data
 
     toc=[]
+    file_contents=[]
+    
     lsector=32
     for file_index,file in enumerate(files):
         with open(file.path,'rb') as f: file_data=f.read()
@@ -180,19 +195,23 @@ def build_cmd(files,options):
 
         check_budget(file_data,65536,file.path)
 
-        n=file_size_bytes%256
-        if n!=0: file_data+=get_filler(256-n)
-        assert len(file_data)%256==0
-
         toc.append(TOCEntry(ident=file.ident,
                             path=file.path,
                             index=file_index,
                             ltrack=lsector//16,
                             sector=lsector%16,
-                            num_bytes=file_size_bytes))
+                            num_bytes=len(file_data)))
+        file_contents.append(file_data)
+
+        n=file_size_bytes%256
+        if n!=0: file_data+=get_filler(256-n)
+        assert len(file_data)%256==0
 
         fdload_data+=file_data
         lsector+=len(file_data)//256
+
+    assert len(toc)==len(file_contents)
+    for i in range(len(toc)): assert toc[i].num_bytes==len(file_contents[i])
 
     max_fdload_data_size=(2*80-1)*16*256
     check_budget_and_pad(fdload_data,max_fdload_data_size,'output big file')
@@ -225,11 +244,16 @@ def build_cmd(files,options):
         with open(options.output_data_path,'wb') as f: f.write(output_data)
 
     if options.output_toc_json_path is not None:
+        toc_json={
+            'num_files':len(toc),
+            'files':toc,
+        }
         with open(options.output_toc_json_path,'wt') as f:
-            json.dump(toc,f,indent=4*' ',cls=JSONEncoder2)
+            json.dump(toc_json,f,indent=4*' ',cls=JSONEncoder2)
 
     if options.output_toc_binary_path is not None:
         toc_binary=bytearray()
+        toc_binary.append(len(toc))
         for entry in toc:
             assert entry.ltrack>=0 and entry.ltrack<160
             toc_binary.append(entry.ltrack)
@@ -242,6 +266,19 @@ def build_cmd(files,options):
             
         with open(options.output_toc_binary_path,'wb') as f:
             f.write(toc_binary)
+
+    if options.output_beeblink_path is not None:
+        makedirs(options.output_beeblink_path)
+        for i in range(len(file_contents)):
+            with open(os.path.join(options.output_beeblink_path,
+                                     '''$.%d'''%i),'wb') as f:
+                f.write(file_contents[i])
+
+        count=bytearray()
+        count.append(len(file_contents))
+        with open(os.path.join(options.output_beeblink_path,'''$.COUNT'''),
+                  'wb') as f:
+            f.write(count)
 
 ##########################################################################
 ##########################################################################
@@ -281,6 +318,7 @@ def main(argv):
     build_subparser.add_argument('--output-data',metavar='FILE',dest='output_data_path',help='''write output to %(metavar)s''')
     build_subparser.add_argument('--output-toc-json',metavar='FILE',dest='output_toc_json_path',help='''write TOC JSON to %(metavar)s''')
     build_subparser.add_argument('--output-toc-binary',metavar='FILE',dest='output_toc_binary_path',help='''write TOC binary to %(metavar)s''')
+    build_subparser.add_argument('--output-beeblink',metavar='PATH',dest='output_beeblink_path',help='''write numbered BeebLink-friendly files to %(metavar)s''')
     
     options=parser.parse_args(argv)
     if options.fun is None:

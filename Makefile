@@ -52,6 +52,7 @@ BEEBLINK_VOLUME:=$(PWD)/beeb/adfsl_fixed_layout
 
 # Where BBC build output goes.
 BEEB_BUILD:=$(BEEBLINK_VOLUME)/Z
+BEEB_FDLOAD_FILES:=$(BEEBLINK_VOLUME)/Y
 
 # ZX02 stuff.
 ZX02_PATH:=$(PWD)/submodules/zx02
@@ -82,7 +83,7 @@ endif
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 
 # Build the big file.
-	$(_V)$(PYTHON) "bin/boot_builder.py" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/boot.dat" --output-toc-json "$(BUILD)/boot.toc.json" --output-toc-binary "$(BUILD)/boot.toc.dat"
+	$(_V)$(PYTHON) "bin/boot_builder.py" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/boot.dat" --output-toc-json "$(BUILD)/boot.toc.json" --output-toc-binary "$(BUILD)/boot.toc.dat" --output-beeblink "$(BEEB_FDLOAD_FILES)"
 
 # Assemble a version of the fdload code that's vaguely testable from
 # BASIC.

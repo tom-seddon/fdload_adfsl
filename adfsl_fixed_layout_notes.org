@@ -369,4 +369,39 @@ Approx bytes/sec for reading each track of the disk in turn.
 |    14 | $0200   |     512 | $fe00    |
 |    15 | $0100   |     256 | $ff00    |
 
+* NMI timing
+
+N = normal case: no cancel, possibly both LSBs carrying.
+
+F = final case: needs cancel
+
+| Addr | Bytes    | Instr     | #N | TotN | #F | TotF | Label                  | Code                                       |
+|------+----------+-----------+----+------+----+------+------------------------+--------------------------------------------|
+| 0d00 | 8d 2a 0d | sta $0d2a |  4 |    4 |  4 |    4 |                        | sta relda+1   ; operand for STA absolute   |
+| 0d03 |          |           |    |      |    |      | branch:                |                                            |
+| 0d03 | 89 1d    | bit #$1d  |  2 |    6 |  2 |    6 |                        | bra command_completed                      |
+| 0d05 | ad 28 fe | lda $fe28 |  6 |   12 |  6 |   12 |                        | lda fdc.status                             |
+| 0d08 | 89 1c    | bit #$1c  |  2 |   14 |  2 |   14 |                        | bit #%00011100  ; RnF/CRC/Lost Data errors |
+| 0d0a | d0 13    | bne $0d1f |  2 |   16 |  2 |   16 |                        | bne cancel_command ;                       |
+| 0d0c | ad 2b fe | lda $fe2b |  6 |   22 |  6 |   22 |                        | lda fdc.data                               |
+| 0d0f | 92 81    | sta ($81) |  5 |   27 |  5 |   27 |                        | sta (read_byte_addr)                       |
+| 0d11 | e6 81    | inc $81   |  5 |   32 |  5 |   32 |                        | inc read_byte_addr+0                       |
+| 0d13 | d0 02    | bne $0d17 |  2 |   34 |  2 |   34 |                        | bne got_read_byte_addr                     |
+| 0d15 | e6 82    | inc $82   |  5 |   39 |  5 |   39 |                        | inc read_byte_addr+1                       |
+| 0d17 |          |           |    |      |    |      | got_read_byte_addr:    |                                            |
+| 0d17 | e6 83    | inc $83   |  5 |   44 |  5 |   44 |                        | inc read_byte_counter+0                    |
+| 0d19 | d0 0e    | bne $0d29 |  2 |   46 |  2 |   46 |                        | bne got_read_byte_counter                  |
+| 0d1b | e6 84    | inc $84   |  5 |   51 |  5 |   51 |                        | inc read_byte_counter+1                    |
+| 0d1d | d0 0a    | bne $0d29 |  3 |   54 |  2 |   53 |                        | bne got_read_byte_counter                  |
+| 0d1f |          |           |    |      |    |      | cancel_command:        |                                            |
+| 0d1f | 20 39 28 | jsr $2839 |    |      |  6 |   59 |                        | jsr cancel                                 |
+| 0d22 |          |           |    |      |    |      | command_completed:     |                                            |
+| 0d22 | ad 28 fe | lda $fe28 |  6 |   60 |    |      |                        | lda fdc.status                             |
+| 0d25 | 29 7f    | and #$7f  |  2 |   62 |    |      |                        | and #$7f ; indicate not busy               |
+| 0d27 | 85 80    | sta $80   |  4 |   66 |    |      |                        | sta command_status                         |
+| 0d29 |          |           |    |      |    |      | got_read_byte_counter: |                                            |
+| 0d29 |          |           |    |      |    |      | nmi_done:              |                                            |
+| 0d29 | a9 ff    | lda #$ff  |  2 |   56 |    |      | relda:                 | lda #$ff                                   |
+| 0d2b | 40       | rti       |  7 |   63 |    |      | rti                    |                                            |
+
 * eof

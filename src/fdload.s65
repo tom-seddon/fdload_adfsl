@@ -9,9 +9,16 @@ CODE_BASE=$2800
 
                 .weak
 test_build=false
-verbose_wait_for_command=false
 debug=false
                 .endweak
+
+                .if test_build
+                .weak
+verbose=false
+                .endweak
+                .else
+verbose=false
+                .endif
 
 ;-------------------------------------------------------------------------
 
@@ -25,6 +32,11 @@ RTI_implicit=$40
                 
 ;-------------------------------------------------------------------------
 
+TOCHeader: .struct
+num_files:
+                .fill 1
+                .endstruct
+                
 TOCEntry: .struct
                 ; logical track to start reading from.
 ltrack: .fill 1
@@ -71,11 +83,14 @@ not_dden=32
 *=CODE_BASE
                 .dsection fdload_code
                 .dsection zx02_code
-toc_data:
-                .cerror *>CODE_BASE+512
+
+toc_header: .dstruct TOCHeader
+toc_entries:
                 .if test_build
+*=toc_header
                 .binary "../build/boot.toc.dat"
                 .endif
+                .cerror *>$3000
 
 ;-------------------------------------------------------------------------
 
@@ -127,11 +142,49 @@ toc_entry: .dstruct TOCEntry
 
 ;-------------------------------------------------------------------------
 
+                .if verbose
+print_value:
+                pha
+                lda #' '
+                jsr oswrch
+                txa
+                jsr oswrch
+                lda #'='
+                jsr oswrch
+                pla
+                pha
+                jsr print_byte
+                pla
+                rts
+                
+print_byte:
+                pha
+                lsr a
+                lsr a
+                lsr a
+                lsr a
+                jsr print_nybble
+                pla
+                and #$0f
+print_nybble:
+                sed
+                clc
+                adc #$90
+                adc #$40
+                cld
+                jmp oswrch
+                .endif
+                
+;-------------------------------------------------------------------------
+
                 .if test_build
 test_read: .block
                 sta $ffff
+                stx load_addr+0
+                sty load_addr+1
                 sta file_index
                 jsr load_uncompressed_file
+load_addr:
                 .word $3000
 file_index: .byte 0
                 sta $fffe
@@ -144,14 +197,12 @@ file_index: .byte 0
 init: .block
                 jsr cancel
 
-                ; copy to $d01. $d00 is RTI, for now, and will get
-                ; fixed up as required.
                 ldx #size(nmi_routine)-1
--
+copy_nmi_routine_loop:
                 lda nmi_routine,x
                 sta $d01,x
                 dex
-                bpl -
+                bpl copy_nmi_routine_loop
 
                 stz command_status
                 .if debug
@@ -200,14 +251,25 @@ perform_seek_type_command: .block
                 .cerror *!=wait_for_command
                 .endblock
 wait_for_command: .block
-                .if verbose_wait_for_command
+                .if verbose
                 lda #'W'
                 jsr oswrch
                 .endif
 wait_for_command_loop:
                 bit command_status
-                bmi wait_for_command_loop
-                .if verbose_wait_for_command
+                bpl command_done
+
+                ; lda fdc.status
+                ; bit #1
+                ; beq command_done
+
+                jmp wait_for_command_loop
+
+command_done:
+                lda fdc.status
+                sta command_status
+                
+                .if verbose
                 lda #8
                 jsr oswrch
                 lda #' '
@@ -225,6 +287,13 @@ wait_for_command_loop:
 ; Will also select appropriate side.
 
 seek: .block
+                .if verbose
+                phx
+                ldx #'T'
+                jsr print_value
+                plx
+                .endif
+                
                 lsr a           ; C=disk side
                 sta fdc.data    ; select dest phys track for seek
 
@@ -243,6 +312,13 @@ seek: .block
 ; read_byte_counter.w = negated number of bytes to read
 
 read: .block
+                .if verbose
+                phx
+                ldx #'S'
+                jsr print_value
+                plx
+                .endif
+                
                 sta fdc.sector
 
                 ; don't update the FDC control reg. The restore/seek
@@ -250,8 +326,15 @@ read: .block
                 ldx #BIT_immediate
                 jsr prepare_nmi_routine_for_command
 
-                lda #%10010000|h_flag_value
+                ; xxx1xxxx = read multiple sectors
+                lda #%10010000|h_flag_value ; Type II Read Sector
                 sta fdc.command
+                .if verbose
+                phx
+                ldx #'C'
+                jsr print_value
+                plx
+                .endif
 
                 bra wait_for_command
                 .endblock
@@ -269,10 +352,7 @@ prepare_fdc_and_nmi_routine_for_command: .block
                 .cerror *!=prepare_nmi_routine_for_command
                 .endblock
 prepare_nmi_routine_for_command: .block
-                ; fix up the NMI routine.
-                lda #STA_absolute
-                sta $d00
-                stx nmi_routine.branch
+                stx $d00
 
                 ; indicate thing is busy.
                 sec
@@ -283,27 +363,13 @@ prepare_nmi_routine_for_command: .block
 ;-------------------------------------------------------------------------
 
 nmi_routine: .block
-                ; $d00 is looked after manually. See comments above.
                 .logical $d01
-                .word relda+1   ; operand for STA absolute
+                .byte complete_command-(*+1) ; operand for BRA
+                
+                sta relda+1
 
-                .if debug
-                inc num_nmis
-                .endif
-
-                ; replace with $89 (BIT immediate, 2 cycles) to create
-                ; the read data NMI routine.
-branch:
-                bra command_completed
-                lda fdc.status
-                bit #%00011100  ; RnF/CRC/Lost Data errors
-                bne cancel_command ; 
                 lda fdc.data
                 sta (read_byte_addr)
-                inc read_byte_addr+0
-                bne got_read_byte_addr
-                inc read_byte_addr+1
-got_read_byte_addr:
                 inc read_byte_counter+0
                 bne got_read_byte_counter
                 inc read_byte_counter+1
@@ -311,13 +377,18 @@ got_read_byte_addr:
 cancel_command:
                 ; Read done.
                 jsr cancel
-command_completed:
-                lda fdc.status
-                and #$7f ; indicate not busy
-                sta command_status
+                lsr command_status
 got_read_byte_counter:
+                inc read_byte_addr+0
+                bne got_read_byte_addr
+                inc read_byte_addr+1
+got_read_byte_addr:
 nmi_done:
 relda: lda #$ff
+                rti
+
+complete_command:
+                lsr command_status
                 rti
                 .endlogical
                 .endblock
@@ -338,7 +409,6 @@ lda_byte: lda $ffff
                 .endblock
 
 load_uncompressed_file: .block
-                ; get file index.
                 tsx
                 
                 ; get dest address
@@ -349,7 +419,16 @@ load_uncompressed_file: .block
 
                 ; get file index
                 jsr fetch_caller_arg ; ABCDEFGH
-                
+
+                ; don't read bogus TOC data! The drive can only go as
+                ; far as track 79...
+                cmp toc_header.num_files
+                bcc got_file_index
+
+                ; return with carry set to indicate failure.
+                rts
+
+got_file_index:
                 ; form toc address.
                 asl a           ; BCDEFGH0 A
                 rol a           ; CDEFGH0A B
@@ -358,11 +437,11 @@ load_uncompressed_file: .block
                 ror a           ; CDEFGH0A
                 and #%11111100  ; CDEFGH00
                 clc
-                adc #<toc_data
+                adc #<toc_entries
                 sta lda_toc_entry_byte+1
                 txa
                 and #%00000011  ; 000000AB
-                adc #>toc_data
+                adc #>toc_entries
                 sta lda_toc_entry_byte+2
 
                 ldx #size(TOCEntry)-1
@@ -383,6 +462,7 @@ read_file_loop:
 
                 ; do the read.
                 lda toc_entry.sector
+                and #$0f
                 jsr read
 
                 ; get the read counter again.
@@ -407,34 +487,39 @@ read_file_loop:
 
                 bne read_file_loop
 
-                rts
-
-                ; still some bytes left? keep going.
-                bne read_file_loop
-                bcc read_file_loop
+                ; return with carry clear to indicate success.
+                clc
                 rts
 
 get_read_byte_counter:
                 lda toc_entry.negative_size+1
                 cmp #$f0
-                bcs in_last_4KB
 
-not_in_last_4KB:
-                ; read as much as is left on the track given the start
-                ; sector - max 4096 bytes.
-                ;
-                ; -4096=$f000, -256=$ff00. The constant can be
+                ; MSB of negative amount of data left in sector.
+                ; -4096=$f000, -256=$ff00 - the constant can be
                 ; -generated from the sector number.
                 lda toc_entry.sector
                 ora #$f0
+                
+                bcs in_last_4KB ; taken if <=4096 bytes left in file
+
+read_remainder_of_track:
+                ; read as much as is left on the track given the start
+                ; sector - max 4096 bytes.
                 sta read_byte_counter+1
                 stz read_byte_counter+0
                 rts
 
 in_last_4KB:
-                sta read_byte_counter+1
+                cmp toc_entry.negative_size+1
+                bcs read_remainder_of_track
+
+                ; what's left on the track covers what's left of the
+                ; file, so read all of it.
                 lda toc_entry.negative_size+0
                 sta read_byte_counter+0
+                lda toc_entry.negative_size+1
+                sta read_byte_counter+1
                 rts
 
                 .endblock
