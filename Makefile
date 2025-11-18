@@ -78,15 +78,18 @@ endif
 	$(_V)$(PYTHON) "bin/boot_builder.py" constants --output "$(BUILD)/files_list.generated.s65"
 
 # Assemble stuff
-	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dinclude_test_hooks=true"
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 
 # Build the big file.
-	$(_V)$(PYTHON) "bin/boot_builder.py" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/!boot.dat" --output-toc "$(BUILD)/!boot.toc.json"
+	$(_V)$(PYTHON) "bin/boot_builder.py" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/boot.dat" --output-toc-json "$(BUILD)/boot.toc.json" --output-toc-binary "$(BUILD)/boot.toc.dat"
+
+# Assemble a version of the fdload code that's vaguely testable from
+# BASIC.
+	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dtest_build=true"
 
 # Form ADFS disk contents in $(DISK_CONTENTS): !BOOT and its .inf.
-	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BUILD)/!boot.dat"
+	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BUILD)/boot.dat"
 	$(_V)echo "$$.!BOOT FFFFFFFF FFFFFFFF" > "$(DISK_CONTENTS)/!BOOT.inf"
 
 # Create the ADFS disk image.

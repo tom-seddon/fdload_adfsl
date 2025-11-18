@@ -1,3 +1,4 @@
 $.FDLOAD1 diff=bbcbasic
 $.SCREENS diff=bbcbasic
 $.FDLOAD2 diff=bbcbasic
+$.FDLOAD3 diff=bbcbasic

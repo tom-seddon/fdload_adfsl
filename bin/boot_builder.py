@@ -108,7 +108,9 @@ def get_exec_part(options):
 
     result=bytearray()
     result+=b'*BASIC\r'
-    if options.vdu21: result+=b'VDU12,23,1,0,0,0,0,0,0,0,0:PRINT"LOADING...";:VDU21\r'
+    if options.vdu21:
+        result+=b'V.12,23,1;0;0;0;0,21\r'
+        result+=b'V.6:P."LOADING...";:V.21\r'
     for line_index,line in enumerate(lines):
         result+=line.encode('ascii')
         # no harm in having the VDU6 always there
@@ -119,14 +121,18 @@ def get_exec_part(options):
 
 def get_filler(n): return n*b'\x00'
 
-def pad_and_check_budget(data,max_size,description):
-    assert isinstance(data,bytearray),type(data)
+def check_budget(data,max_size,description):
     
     if len(data)>max_size:
-        fatal('%s too large: %d bytes (max is %d; overrun by %d)',
+        fatal('too large: %d bytes (max is %d; overrun by %d): %s',
               description,
               len(data),
               len(data)-max_size)
+
+def check_budget_and_pad(data,max_size,description):
+    assert isinstance(data,bytearray),type(data)
+
+    check_budget(data,max_size,description)
 
     data+=bytearray(max_size-len(data))
 
@@ -154,13 +160,13 @@ def build_cmd(files,options):
     #
     # (The ADFS metadata is 7 sectors, so there's 9 sectors left in
     # track 0.)
-    pad_and_check_budget(exec_data,9*256,'loader8 in *EXEC form')
+    check_budget_and_pad(exec_data,9*256,'loader8 in *EXEC form')
 
     fdload_data=bytearray()
     
     # Space for loader1.
     loader1=load_prg(options.loader1_path)
-    pad_and_check_budget(loader1.data,4096,'loader1 data')
+    check_budget_and_pad(loader1.data,4096,'loader1 data')
     fdload_data+=loader1.data
 
     toc=[]
@@ -169,7 +175,11 @@ def build_cmd(files,options):
         with open(file.path,'rb') as f: file_data=f.read()
 
         file_size_bytes=len(file_data)
-        
+
+        if file_size_bytes==0: fatal('unsupported 0 byte file: %s'%file.path)
+
+        check_budget(file_data,65536,file.path)
+
         n=file_size_bytes%256
         if n!=0: file_data+=get_filler(256-n)
         assert len(file_data)%256==0
@@ -185,7 +195,7 @@ def build_cmd(files,options):
         lsector+=len(file_data)//256
 
     max_fdload_data_size=(2*80-1)*16*256
-    pad_and_check_budget(fdload_data,max_fdload_data_size,'output big file')
+    check_budget_and_pad(fdload_data,max_fdload_data_size,'output big file')
 
     # The output big file is in fdload logical sector order. Rearrange
     # so that it is in the ADFS sector order expected by adf_create.
@@ -214,9 +224,24 @@ def build_cmd(files,options):
     if options.output_data_path is not None:
         with open(options.output_data_path,'wb') as f: f.write(output_data)
 
-    if options.output_toc_path is not None:
-        with open(options.output_toc_path,'wt') as f:
+    if options.output_toc_json_path is not None:
+        with open(options.output_toc_json_path,'wt') as f:
             json.dump(toc,f,indent=4*' ',cls=JSONEncoder2)
+
+    if options.output_toc_binary_path is not None:
+        toc_binary=bytearray()
+        for entry in toc:
+            assert entry.ltrack>=0 and entry.ltrack<160
+            toc_binary.append(entry.ltrack)
+
+            assert entry.sector>=0 and entry.sector<16
+            toc_binary.append(entry.sector)
+
+            toc_binary.append(-entry.num_bytes&0xff)
+            toc_binary.append(-entry.num_bytes>>8&0xff)
+            
+        with open(options.output_toc_binary_path,'wb') as f:
+            f.write(toc_binary)
 
 ##########################################################################
 ##########################################################################
@@ -254,7 +279,8 @@ def main(argv):
     build_subparser.add_argument('--loader1',metavar='FILE',required=True,dest='loader1_path',help='''read loader1 code from %(metavar)s, a C64 .prg''')
     build_subparser.add_argument('--vdu21',action='store_true',help='''add a VDU21 in the *EXECable part''')
     build_subparser.add_argument('--output-data',metavar='FILE',dest='output_data_path',help='''write output to %(metavar)s''')
-    build_subparser.add_argument('--output-toc',metavar='FILE',dest='output_toc_path',help='''write TOC JSON to %(metavar)s''')
+    build_subparser.add_argument('--output-toc-json',metavar='FILE',dest='output_toc_json_path',help='''write TOC JSON to %(metavar)s''')
+    build_subparser.add_argument('--output-toc-binary',metavar='FILE',dest='output_toc_binary_path',help='''write TOC binary to %(metavar)s''')
     
     options=parser.parse_args(argv)
     if options.fun is None:
