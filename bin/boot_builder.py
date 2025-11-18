@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import sys,os,argparse,collections,json,dataclasses
+import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util
 
 ##########################################################################
 ##########################################################################
@@ -14,14 +14,43 @@ import sys,os,argparse,collections,json,dataclasses
 # and load address.
 #
 # fdload content starts at side 1 track 0 sector 0.
+
+##########################################################################
+##########################################################################
+
+# 1. When running boot_builder.py, use --list to supply the Python
+# list file - a file with Python code in it that specifies the files
+# to include on the disk.
 #
-# 
+# 2. Use "boot_builder.py constants" to generate a .s65 with constants
+# for the file indexes. This gets included by any of the consuming
+# code.
+#
+# 3. Use "boot_builder.py build" to build the actual big !BOOT file.
+# This takes paths to loader0 (C64 .PRG bootstrap program, poked into
+# RAM from BASIC then executed) and loader1 (C64 .PRG second loader
+# program, loaded from disk then executed). The binary TOC is appended
+# to loader1, which is assumed to the fdload code plus anything else
+# and start the actual thing running.
+#
+# Perhaps obviously, the file list should be the same for the
+# constants and build run in a particular build.
+#
+# (Max size for loader0 is 512 bytes; max size for loader1+TOC is 4
+# KB.)
+#
+# The big !BOOT file is 653,568 bytes, and will fit on an empty ADFS L
+# disk.
 
-##########################################################################
-##########################################################################
-
-# TODO: sort out my .inf reading code so it can go by .inf rather than
-# .prg
+# boot_builder.py can produce some additional output:
+#
+# . binary format TOC, for use by test code
+#
+# . JSON format TOC, vaguely human readable
+#
+# . BeebLink files, numbered, one per file on disk, for testing
+# purposes. plus $.COUNT, a 1-byte file containing 1 byte: the number
+# of files
 
 ##########################################################################
 ##########################################################################
@@ -32,22 +61,6 @@ import sys,os,argparse,collections,json,dataclasses
 # the 6502 code.
 
 File=collections.namedtuple('File','path ident')
-
-# List of files that go into the build is defined here.
-#
-# Files will be arranged on disk in the specific order given.
-def make_files_list():
-    drive1='''beeb/adfsl_fixed_layout/1/'''
-    files=[]
-    for i in range(10):
-        files.append(File(path=os.path.join(drive1,'''$.SCREEN%d'''%i),
-                          ident='screen%d'%i))
-
-    for i in range(2):
-        files.append(File(path=os.path.join(drive1,'''$.PSCREEN%d'''%i),
-                                            ident='pscreen%d'%i))
-
-    return files
 
 ##########################################################################
 ##########################################################################
@@ -109,7 +122,7 @@ def get_exec_part(options):
                loader0.data[i+3]<<24)
         stmt='!%s=%s'%(get_smaller_str(addr),get_smaller_str(dword))
 
-        # max BASIC 4 line length is $ee (see
+        # BASIC 4 input buffer size is $ee (see
         # https://8bs.com/basic/basic4-b8b6.htm) - leave a bit of
         # slack
         if len(lines)>0 and len(lines[-1])+1+len(stmt)<0xe0:
@@ -230,7 +243,8 @@ def build_cmd(files,options):
             
             i=ltrack*4096
             j=len(output_data)
-            output_data+=fdload_data[i:i+4096]
+            if i>len(fdload_data): output_data+=bytearray(4096)
+            else: output_data+=fdload_data[i:i+4096]
 
             # if track>=1:
             #     output_data[j+0]=side
@@ -299,6 +313,7 @@ def constants_cmd(files,options):
 
 def main(argv):
     parser=argparse.ArgumentParser()
+    parser.add_argument('-l','--list',metavar='FILE',dest='list_py_path',required=True,help='''use Python script %(metavar)s to get files list''')
     parser.set_defaults(fun=None)
 
     subparsers=parser.add_subparsers()
@@ -325,7 +340,13 @@ def main(argv):
         parser.print_help()
         sys.exit(1)
 
-    files=make_files_list()
+    # https://stackoverflow.com/a/54956419/1618406
+    spec=importlib.util.spec_from_file_location('file_list',
+                                                options.list_py_path)
+    file_list_module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(file_list_module)
+
+    files=file_list_module.make_files_list()
     idents_seen=set()
     for file in files:
         if file.ident in idents_seen:

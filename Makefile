@@ -45,7 +45,7 @@ BEEB_BIN:=$(PWD)/submodules/beeb/bin
 
 # Where intermediate build output goes (absolute path).
 BUILD:=$(PWD)/build
-DISK_CONTENTS:=$(BUILD)/disk
+TEST_DISK_CONTENTS:=$(BUILD)/test_disk
 
 # Where the BeebLink volume lives.
 BEEBLINK_VOLUME:=$(PWD)/beeb/adfsl_fixed_layout
@@ -68,6 +68,11 @@ export ZX02PACK_CACHE=$(BUILD)/zx02_cache
 ##########################################################################
 ##########################################################################
 
+TEST_DISK_LIST_PY:=bin/test_disk_files.py
+
+##########################################################################
+##########################################################################
+
 .PHONY: build
 build: _output_folders
 # Build prerequisites.
@@ -76,28 +81,43 @@ ifneq ($(UNAME),Windows_NT)
 endif
 
 # Create the files list.
-	$(_V)$(PYTHON) "bin/boot_builder.py" constants --output "$(BUILD)/files_list.generated.s65"
+	$(_V)$(PYTHON) "bin/boot_builder.py" --list "$(TEST_DISK_LIST_PY)" constants --output "$(BUILD)/test_disk_files.generated.s65"
 
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 
 # Build the big file.
-	$(_V)$(PYTHON) "bin/boot_builder.py" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/boot.dat" --output-toc-json "$(BUILD)/boot.toc.json" --output-toc-binary "$(BUILD)/boot.toc.dat" --output-beeblink "$(BEEB_FDLOAD_FILES)"
+	$(_V)$(PYTHON) "bin/boot_builder.py" --list "$(TEST_DISK_LIST_PY)" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/test_disk.boot.dat" --output-toc-json "$(BUILD)/test_disk.toc.json" --output-toc-binary "$(BUILD)/test_disk.toc.dat" --output-beeblink "$(BEEB_FDLOAD_FILES)"
 
 # Assemble a version of the fdload code that's vaguely testable from
 # BASIC.
 	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dtest_build=true"
 
+	$(_V)$(MAKE) _adfs_image "BOOT=$(BUILD)/test_disk.boot.dat" "DISK_CONTENTS=$(BUILD)/test_disk" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
+
+##########################################################################
+##########################################################################
+
+.PHONY:_adfs_image
+_adfs_image: BOOT=$(error must specify BOOT)
+_adfs_image: DISK_CONTENTS=$(error must specify DISK_CONTENTS)
+_adfs_image: PC_IMAGE=$(error must specify PC_IMAGE)
+_adfs_image: BBC_IMAGE=$(error must specify BBC_IMAGE)
+_adfs_image: TITLE=
+_adfs_image:
+	$(_V)$(SHELLCMD) mkdir "$(DISK_CONTENTS)"
+
 # Form ADFS disk contents in $(DISK_CONTENTS): !BOOT and its .inf.
-	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BUILD)/boot.dat"
+#	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BOOT)"
+	$(_V)$(SHELLCMD) copy-file "$(BOOT)" "$(DISK_CONTENTS)/!BOOT"
 	$(_V)echo "$$.!BOOT FFFFFFFF FFFFFFFF" > "$(DISK_CONTENTS)/!BOOT.inf"
 
 # Create the ADFS disk image.
-	$(_V)$(PYTHON) "$(BEEB_BIN)/adf_create.py" -o "$(BUILD)/adfsl_fixed_layout.adl" --opt4 3 --title "AMAZING DEMO" "$(DISK_CONTENTS)/!BOOT"
+	$(_V)$(PYTHON) "$(BEEB_BIN)/adf_create.py" -o "$(BUILD)/$(PC_IMAGE)" --opt4 3 --title "$(TITLE)" "$(DISK_CONTENTS)/!BOOT"
 
 # Copy the ADFS disk image somewhere the BBC can see it too.
-	$(_V)$(SHELLCMD) copy-file "$(BUILD)/adfsl_fixed_layout.adl" "$(BEEB_BUILD)/$$.ADFSL_DISK"
+	$(_V)$(SHELLCMD) copy-file "$(BUILD)/$(PC_IMAGE)" "$(BEEB_BUILD)/L.$(BBC_IMAGE)"
 
 ##########################################################################
 ##########################################################################
@@ -134,7 +154,7 @@ _asm:
 
 .PHONY: _tom_emacs
 _tom_emacs: _CONFIG:=MOS 3.50r + BeebLink
-_tom_emacs: _DISK:=$(BUILD)/adfsl_fixed_layout.adl
+_tom_emacs: _DISK:=$(BUILD)/test_disk.adl
 _tom_emacs:
 	$(_V)$(MAKE) build
 	curl --connect-timeout 0.25 --silent -G 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"

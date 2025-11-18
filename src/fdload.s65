@@ -88,7 +88,7 @@ toc_header: .dstruct TOCHeader
 toc_entries:
                 .if test_build
 *=toc_header
-                .binary "../build/boot.toc.dat"
+                .binary "../build/test_disk.toc.dat"
                 .endif
                 .cerror *>$3000
 
