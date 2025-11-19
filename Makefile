@@ -62,7 +62,7 @@ else
 ZX02:=$(ZX02_PATH)/build/zx02
 endif
 
-export ZX02PACK_ZX02=$(ZX02_PATH)
+export ZX02PACK_ZX02=$(ZX02)
 export ZX02PACK_CACHE=$(BUILD)/zx02_cache
 
 ##########################################################################
@@ -83,6 +83,18 @@ endif
 # Create the files list.
 	$(_V)$(PYTHON) "bin/boot_builder.py" --list "$(TEST_DISK_LIST_PY)" constants --output "$(BUILD)/test_disk_files.generated.s65"
 
+# Pack some test files.
+	$(_V)$(MAKE) _pack_screen INDEX=0
+	$(_V)$(MAKE) _pack_screen INDEX=1
+	$(_V)$(MAKE) _pack_screen INDEX=2
+	$(_V)$(MAKE) _pack_screen INDEX=3
+	$(_V)$(MAKE) _pack_screen INDEX=4
+	$(_V)$(MAKE) _pack_screen INDEX=5
+	$(_V)$(MAKE) _pack_screen INDEX=6
+	$(_V)$(MAKE) _pack_screen INDEX=7
+	$(_V)$(MAKE) _pack_screen INDEX=8
+	$(_V)$(MAKE) _pack_screen INDEX=9
+
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
@@ -95,6 +107,13 @@ endif
 	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dtest_build=true"
 
 	$(_V)$(MAKE) _adfs_image "BOOT=$(BUILD)/test_disk.boot.dat" "DISK_CONTENTS=$(BUILD)/test_disk" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
+
+##########################################################################
+##########################################################################
+
+.PHONY:_pack_screen
+_pack_screen:
+	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)"
 
 ##########################################################################
 ##########################################################################
@@ -160,5 +179,5 @@ _tom_emacs: _CONFIG:=MOS 3.50r + BeebLink
 _tom_emacs: _DISK:=$(BUILD)/test_disk.adl
 _tom_emacs:
 	$(_V)$(MAKE) build
-	curl --connect-timeout 0.25 --silent -G 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
+#	curl --connect-timeout 0.25 --silent -G 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
 	curl --connect-timeout 0.25 --silent -H 'Content-Type:application/binary' --upload-file '$(_DISK)' 'http://localhost:48075/mount/b2?drive=0&name=$(_DISK)'

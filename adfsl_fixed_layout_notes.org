@@ -404,4 +404,10 @@ F = final case: needs cancel
 | 0d29 | a9 ff    | lda #$ff  |  2 |   56 |    |      | relda:                 | lda #$ff                                   |
 | 0d2b | 40       | rti       |  7 |   63 |    |      | rti                    |                                            |
 
+* ZX0LOAD1 timings
+
+initial: T=6.87; S=3906/s; D=29810/s
+
+
+
 * eof

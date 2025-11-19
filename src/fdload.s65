@@ -138,6 +138,13 @@ toc_entry: .dstruct TOCEntry
                 .endif
                 rts
                 jmp test_read   ; +15
+                lda #ZP_BASE    ; +18
+                rts
+                lda #ZX0_src   ; +21
+                rts
+                lda #ZX0_dst   ; +24
+                rts
+                jmp full_decomp ; +27
                 .endif
 
 ;-------------------------------------------------------------------------
@@ -529,7 +536,6 @@ in_last_4KB:
 ;-------------------------------------------------------------------------
 
                 .section zx02_zp
-ZP:
 offset: .fill 2
 bitr: .fill 1
 ZX0_dst: .fill 2
@@ -540,33 +546,45 @@ setx: .fill 1
                 
                 .section zx02_code
 
-out_addr=$3000
-comp_data=$4000
+; out_addr=$3000
+; comp_data=$4000
 
-zx0_ini_block
-                .word 0 ; Initial offset - 1. See README for explanation (-o option).
-                .byte $80 ; Initial value for the bit reservoir. Don't ever change.
-                .word out_addr  ; Address to place decompressed data
-                .word comp_data   ; Address of data to decompress.
+; zx0_ini_block
+;                 .word 0 ; Initial offset - 1. See README for explanation (-o option).
+;                 .byte $80 ; Initial value for the bit reservoir. Don't ever change.
+;                 .word out_addr  ; Address to place decompressed data
+;                 .word comp_data   ; Address of data to decompress.
                 
 ;--------------------------------------------------
 ; Decompress ZX0 data (6502 optimized format)
 ;
-; Reads data from 'comp_data' and writes the result to 'out_addr', until the
-; compressed data ends.
+; caller must fill in:
+;
+; ZX0_src - where to read compressed data from
+;
+; ZX0_dst - where to write uncompressed data to
+;
+; initial offset is (for now) always 0.
 
 full_decomp: .block
 ; Get initialization block
-                ldx #6
+                lda #$80
+                sta bitr
 
-copy_init:
-                lda zx0_ini_block,x
-                sta offset,x
-                dex
-                bpl copy_init
+                stz offset+0
+                stz offset+1
+                
+;                 ldx #6
+
+; copy_init:
+;                 lda zx0_ini_block,x
+;                 sta offset,x
+;                 dex
+;                 bpl copy_init
 
                 ; Init: X = -2
-                dex
+                ; dex
+                ldx #$fe
 
                 ; Decode literal: Copy next N bytes from compressed file
                 ;    Elias(length)  byte[1]  byte[2]  ...  byte[N]

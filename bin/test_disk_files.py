@@ -7,11 +7,11 @@ def make_files_list():
     drive1='''beeb/adfsl_fixed_layout/1/'''
     files=[]
 
-    # # 1 byte. Occupies L2 S0.
-    # files.append(boot_builder.File(path='data/n1.dat',ident='n1'))
+    # 1 byte. Occupies L2 S0.
+    files.append(boot_builder.File(path='data/n1.dat',ident='n1'))
 
-    # # 3841 bytes. Occupies L2 S1-L3 S0 inclusive.
-    # files.append(boot_builder.File(path='data/n3841.dat',ident='n3841'))
+    # 3841 bytes. Occupies L2 S1-L3 S0 inclusive.
+    files.append(boot_builder.File(path='data/n3841.dat',ident='n3841'))
 
     for i in range(10):
         files.append(boot_builder.File(path=os.path.join(drive1,'''$.SCREEN%d'''%i),
