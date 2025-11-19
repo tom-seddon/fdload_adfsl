@@ -408,6 +408,6 @@ F = final case: needs cancel
 
 initial: T=6.87; S=3906/s; D=29810/s
 
-
+tweaked: T=4.59; S=5846/s; D=44618/s
 
 * eof

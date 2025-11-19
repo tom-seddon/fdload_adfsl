@@ -591,7 +591,7 @@ full_decomp: .block
                 ; Decode literal: Copy next N bytes from compressed file
                 ;    Elias(length)  byte[1]  byte[2]  ...  byte[N]
 decode_literal:
-                ldy   #1
+                ldx   #1
                 jsr   get_elias
 
                 clc             ; copy from src
@@ -607,7 +607,7 @@ decode_literal:
 
                 ; Copy from last offset (repeat N bytes from last offset)
                 ;    Elias(length)
-                iny
+                inx
                 jsr   get_elias
 dzx0s_copy:
 ; C=0 from get_elias
@@ -642,12 +642,12 @@ dzx0s_copy:
                 ;    Elias(MSB(offset))  LSB(offset)  Elias(length-1)
 dzx0s_new_offset:
 ; Read elias code for high part of offset
-                iny
+                inx
                 jsr   get_elias
                 beq   exit  ; Read a 0, signals the end
                 ; Decrease and divide by 2
-                dey
-                tya
+                dex
+                txa
                 lsr   a
                 sta   offset+1
 
@@ -660,10 +660,10 @@ dzx0s_new_offset:
 
                 ; And get the copy length.
                 ; Start elias reading with the bit already in carry:
-                ldy   #1
+                ldx   #1
                 jsr   elias_skip1
 
-                iny
+                inx
                 bcc   dzx0s_copy
 
 ; Read an elias-gamma interlaced code.
@@ -672,7 +672,7 @@ elias_loop:
 ; Read next data bit to result
                 asl   bitr
                 rol   a
-                tay
+                tax
 
 get_elias:
 ; Get one bit
@@ -686,13 +686,14 @@ get_elias:
                 sta   bitr
 
 elias_skip1:
-                tya
+                txa
                 bcs   elias_loop
                 ; Got ending bit, stop reading
                 rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+; must preserve X/Y/C
 get_src_byte:
                 lda (ZX0_src)
                 inc ZX0_src+0
@@ -719,6 +720,7 @@ exit:
 ;                 rts
 
 copy_bytes: .block
+                ldy #0
 loop:
                 ; slightly prioritize throughput for copying from
                 ; pntr. this is where the compression comes from so
@@ -734,13 +736,24 @@ pntr_byte:
                 inc pntr+1
 +
 got_byte:
-                sta (ZX0_dst)
-                inc ZX0_dst+0
-                bne +
+                sta (ZX0_dst),y
+                iny
+;                 inc ZX0_dst+0
+;                 bne +
+;                 inc ZX0_dst+1
+; +
+                dex
+                bne loop
+                tya
+                clc
+                beq carry ; taken if X was 0 on entry - 256 bytes were
+                          ; copied
+                adc ZX0_dst+0
+                sta ZX0_dst+0
+                bcc +
+carry:
                 inc ZX0_dst+1
 +
-                dey
-                bne loop
                 asl bitr
                 rts
                 .endblock
