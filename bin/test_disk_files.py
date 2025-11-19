@@ -23,6 +23,8 @@ def make_files_list():
 
     files.append(boot_builder.File(path='build/GhoulsRevenge.bbc.zx02',
                                    ident='ghouls_revenge_zx02'))
+    files.append(boot_builder.File(path='build/TitleScreen_BBC.bbc.zx02',
+                                   ident='stunt_car_racer_zx02'))
 
     return files
 

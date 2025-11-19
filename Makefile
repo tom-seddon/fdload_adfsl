@@ -82,7 +82,7 @@ endef
 ##########################################################################
 
 .PHONY: build
-build: _output_folders $(BUILD)/GhoulsRevenge.bbc.dat
+build: _output_folders $(BUILD)/GhoulsRevenge.bbc.dat $(BUILD)/TitleScreen_BBC.bbc.dat
 # Build prerequisites.
 ifneq ($(UNAME),Windows_NT)
 	$(_V)test -f "$(ZX02)" || (cd "$(ZX02_PATH)" && $(GNU_MAKE) all)
@@ -112,6 +112,9 @@ endif
 $(BUILD)/GhoulsRevenge.bbc.dat : data/GhoulsRevenge.png
 	$(_V)$(PYTHON) "$(BEEB_BIN)/png2bbc.py" -o "$@" "$<" 2
 
+$(BUILD)/TitleScreen_BBC.bbc.dat : data/TitleScreen_BBC.png
+	$(_V)$(PYTHON) "$(BEEB_BIN)/png2bbc.py" -o "$@" "$<" 2 --160
+
 ##########################################################################
 ##########################################################################
 
@@ -121,6 +124,8 @@ _pack_test_files:
 	$(foreach INDEX,0 1 2 3 4 5 6 7 8 9,$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)" $(newline))
 	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BUILD)/GhoulsRevenge.bbc.dat" "$(BUILD)/GhoulsRevenge.bbc.zx02"
 	$(_V)$(SHELLCMD) copy-file "$(BUILD)/GhoulsRevenge.bbc.zx02" "$(BEEB_BUILD)/Z.GHOULS"
+	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BUILD)/TitleScreen_BBC.bbc.dat" "$(BUILD)/TitleScreen_BBC.bbc.zx02"
+	$(_V)$(SHELLCMD) copy-file "$(BUILD)/TitleScreen_BBC.bbc.zx02" "$(BEEB_BUILD)/Z.SCR"
 
 ##########################################################################
 ##########################################################################

@@ -139,16 +139,17 @@ toc_entry: .dstruct TOCEntry
                 lda #0
                 .endif
                 rts
-                jmp test_read   ; +15
+                jmp test_load_uncompressed_file   ; +15 $0f
                 lda #ZP_BASE    ; +18
                 rts
                 lda #ZX0_src   ; +21 $15
                 rts
                 lda #ZX0_dst   ; +24 $18
                 rts
-                jmp test_full_decomp ; +27
-                jmp full_decomp      ; +30
-                jmp get_zx02_workspace ; +33
+                jmp test_full_decomp ; +27 $1b
+                jmp full_decomp      ; +30 $1e
+                jmp get_zx02_workspace ; +33 $21
+                jmp test_load_compressed_file ; +36 $24
                 .endif
 
 ;-------------------------------------------------------------------------
@@ -189,7 +190,7 @@ print_nybble:
 ;-------------------------------------------------------------------------
 
                 .if test_build
-test_read: .block
+test_load_uncompressed_file: .block
                 sta $ffff
                 stx load_addr+0
                 sty load_addr+1
@@ -198,6 +199,22 @@ test_read: .block
 load_addr:
                 .word $3000
 file_index: .byte 0
+                sta $fffe
+                rts
+                .endblock
+
+test_load_compressed_file: .block
+                sta $ffff
+                stx lda_byte+1
+                sty lda_byte+2
+                ldx #3
+loop:
+lda_byte: lda $ffff,x
+                sta args,x
+                dex
+                bpl loop
+                jsr load_compressed_file
+args: .fill 4
                 sta $fffe
                 rts
                 .endblock
@@ -414,7 +431,9 @@ complete_command:
                 .endblock
 
 ;-------------------------------------------------------------------------
-
+;
+; Preserves: Y
+; 
 fetch_caller_arg: .block
                 inc $101,x
                 bne +
@@ -428,6 +447,16 @@ lda_byte: lda $ffff
                 rts
                 .endblock
 
+;-------------------------------------------------------------------------
+;
+; Entry:
+; 
+; caller args:
+; 
+; .word dest_address - where to load the data to
+;
+; .byte file_index - index of file
+
 load_uncompressed_file: .block
                 tsx
                 
@@ -438,17 +467,131 @@ load_uncompressed_file: .block
                 sta read_byte_addr+1
 
                 ; get file index
-                jsr fetch_caller_arg ; ABCDEFGH
+                jsr fetch_caller_arg
 
+                jsr file_read_init
+                bcs done        ; taken if invalid file
+
+loop:
+                jsr file_read_next_track
+                bcs loop
+                
+done:
+                rts
+                .endblock
+
+;-------------------------------------------------------------------------
+;
+; Entry:
+;
+; caller args:
+;
+; .word dest_address - where to uncompress the data to
+;
+; .byte buffer_msb - MSB of page-aligned 4 KB buffer to read each bit of file into
+;
+; .byte file_index - index of file
+                
+load_compressed_file: .block
+                tsx
+
+                ; get dest address
+                jsr fetch_caller_arg
+                sta ZX0_dst+0
+                jsr fetch_caller_arg
+                sta ZX0_dst+1
+
+                ; get buffer address MSB
+                jsr fetch_caller_arg
+                pha             ; save buffer address MSB
+
+                ; ; form buffer end address MSB
+                ; clc
+                ; adc #>4096
+                ; sta ZX0_src_buf_end_page
+
+                ; get file index
+                jsr fetch_caller_arg
+                jsr file_read_init
+                pla             ; restore buffer address MSB
+                bcs done        ; taken if invalid file
+
+                ; indicate resumable operation
+                ldx #$80
+                stx ZX0_resume_state
+
+loop:
+                pha             ; save buffer address MSB
+
+                ; Form disk read address.
+                stz read_byte_addr+0
+                sta read_byte_addr+1
+
+                ; form ZX0 source address. Same.
+                stz ZX0_src+0
+                sta ZX0_src+1
+
+                ; read next bit
+                jsr file_read_next_track
+                ;php             ; save eof flag
+
+                ; Fix up buffer end address. 
+                sec
+                lda ZX0_src+1
+                sbc read_byte_counter+1
+                sta ZX0_src_buf_end_page
+
+                ; decompress next bit
+                jsr full_decomp
+
+                ; ; restore C
+                ; pla
+                ; pha
+                ; plp
+
+                pla             ; restore buffer address MSB
+
+                ; always only loop until end of data. if the last byte
+                ; of the file is the last byte of the buffer, when
+                ; full_decomp returns, there's still 1 byte to process
+                ; and it needs to be called once more.
+                bit ZX0_resume_state
+                bmi loop        ; taken if still more zx02 data
+
+                ; ; test both flags - (D)ata end and (F)ile end
+                ; rol a           ; ???????D
+                ; plp
+                ; rol a           ; ??????DF
+                
+                ; plx             ; restore buffer address MSB
+                
+                ; bit #3          ; test DF flags
+                ; beq loop
+                
+done:
+                rts
+                .endblock
+                
+;-------------------------------------------------------------------------
+;
+; Initialise file read.
+;
+; Entry:
+; 
+; A = file index
+;
+; Exit:
+;
+; toc_entry - initialised
+;
+; Preserves: Y
+                
+file_read_init: .block
                 ; don't read bogus TOC data! The drive can only go as
                 ; far as track 79...
                 cmp toc_header.num_files
-                bcc got_file_index
+                bcs done
 
-                ; return with carry set to indicate failure.
-                rts
-
-got_file_index:
                 ; form toc address.
                 asl a           ; BCDEFGH0 A
                 rol a           ; CDEFGH0A B
@@ -462,6 +605,7 @@ got_file_index:
                 txa
                 and #%00000011  ; 000000AB
                 adc #>toc_entries
+                ; C=0
                 sta lda_toc_entry_byte+2
 
                 ldx #size(TOCEntry)-1
@@ -471,8 +615,38 @@ lda_toc_entry_byte: lda $ffff,x
                 dex
                 bpl -
 
-                ; 0-byte files are not a thing.
-read_file_loop:
+done:
+                rts
+                .endblock
+                
+;-------------------------------------------------------------------------
+;
+; Read next file track
+;
+; Entry:
+;
+; toc_entry - as initialised by file_read_init, or as updated by last
+; call to file_read_next_track
+;
+; read_byte_addr - where to write the data to. Up to 4 KB of data will
+; be read
+;
+; Exit:
+;
+; toc_entry - updated for next read
+;
+; read_byte_counter - negative count of bytes read
+;
+; C=0 if end of file reached
+
+file_read_next_track: .block
+                ; 0-byte files are not supposed to be a thing, but it
+                ; simplifies the compressed file loading to handle
+                ; this case.
+                lda toc_entry.negative_size+0
+                ora toc_entry.negative_size+1
+                beq done        ; exit with C=0 indicating EOF
+                
                 ; fill out the byte count for the read.
                 jsr get_read_byte_counter
 
@@ -505,10 +679,9 @@ read_file_loop:
                 sbc read_byte_counter+1
                 sta toc_entry.negative_size+1
 
-                bne read_file_loop
+done:
+                cmp #1
 
-                ; return with carry clear to indicate success.
-                clc
                 rts
 
 get_read_byte_counter:
@@ -559,7 +732,7 @@ pntr: .fill 2
                 .section zx02_workspace
 
 ZX0_resume_state: .fill 1
-src_buf_end_page: .fill 1
+ZX0_src_buf_end_page: .fill 1
 stack_buf_size: .fill 1
 entry_s: .fill 1
 stack_buf: .fill 12             ; hopefully sufficient
@@ -580,7 +753,7 @@ stack_buf: .fill 12             ; hopefully sufficient
 ; ZX0_dst - where to write uncompressed data to
 ;
 ; ZX0_resume_state - set bit 7 if decomppression should be resumable. if
-; ZX0_src MSB hits src_buf_end_page, the call will return, ready to
+; ZX0_src MSB hits ZX0_src_buf_end_page, the call will return, ready to
 ; run again from where it left off with the next lump of data.
 ; (Reinitialise ZX0_src to point to the start of the buffer again.)
 ;
@@ -710,26 +883,19 @@ get_src_byte: .block
                 bpl done              ; not resumable
                 pha                   ; save byte read
                 lda ZX0_src+1         ; src address MSB
-                eor src_buf_end_page  ; compare to end address MSB
+                eor ZX0_src_buf_end_page  ; compare to end address MSB
                 bne got_addr          ; taken if not at end of buffer
 
                 php             ; save C
                 phx             ; save X
                 phy             ; save Y
 
-                ; $101=Y
-                ; $102=X
-                ; $103=P
-                ; $104=A
-                ; $105...=stack stuff
-
-                tsx
                 ldy #0
 save_stack_loop:
-                lda $101,x
+                pla
                 sta stack_buf,y
                 iny
-                inx
+                tsx
                 cpx entry_s
                 bne save_stack_loop
                 sty stack_buf_size
@@ -737,7 +903,6 @@ save_stack_loop:
                 ; set bits 6+7 - resumable, and resume state present.
                 sec
                 ror ZX0_resume_state ; set bit 6 - state saved.
-                txs              ; restore initial stack position
                 rts              ; return to caller
 resume:
                 ldy stack_buf_size
