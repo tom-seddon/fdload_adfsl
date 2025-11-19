@@ -21,5 +21,8 @@ def make_files_list():
         files.append(boot_builder.File(path=os.path.join(drive1,'''$.PSCREEN%d'''%i),
                                     ident='pscreen%d'%i))
 
+    files.append(boot_builder.File(path='build/GhoulsRevenge.bbc.zx02',
+                                   ident='ghouls_revenge_zx02'))
+
     return files
 

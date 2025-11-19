@@ -83,6 +83,8 @@ not_dden=32
 *=CODE_BASE
                 .dsection fdload_code
                 .dsection zx02_code
+zx02_workspace:
+                .dsection zx02_workspace
 
 toc_header: .dstruct TOCHeader
 toc_entries:
@@ -140,11 +142,13 @@ toc_entry: .dstruct TOCEntry
                 jmp test_read   ; +15
                 lda #ZP_BASE    ; +18
                 rts
-                lda #ZX0_src   ; +21
+                lda #ZX0_src   ; +21 $15
                 rts
-                lda #ZX0_dst   ; +24
+                lda #ZX0_dst   ; +24 $18
                 rts
-                jmp full_decomp ; +27
+                jmp test_full_decomp ; +27
+                jmp full_decomp      ; +30
+                jmp get_zx02_workspace ; +33
                 .endif
 
 ;-------------------------------------------------------------------------
@@ -197,6 +201,15 @@ file_index: .byte 0
                 sta $fffe
                 rts
                 .endblock
+
+test_full_decomp:
+                lsr ZX0_resume_state
+                jmp full_decomp
+
+get_zx02_workspace:
+                ldx #<zx02_workspace
+                ldy #>zx02_workspace
+                rts
                 .endif
                 
 ;-------------------------------------------------------------------------
@@ -541,53 +554,58 @@ bitr: .fill 1
 ZX0_dst: .fill 2
 ZX0_src: .fill 2
 pntr: .fill 2
-setx: .fill 1
+                .endsection
+
+                .section zx02_workspace
+
+ZX0_resume_state: .fill 1
+src_buf_end_page: .fill 1
+stack_buf_size: .fill 1
+entry_s: .fill 1
+stack_buf: .fill 12             ; hopefully sufficient
+                
                 .endsection
                 
                 .section zx02_code
 
-                .cerror pntr!=ZX0_src+2
-                
-; out_addr=$3000
-; comp_data=$4000
-
-; zx0_ini_block
-;                 .word 0 ; Initial offset - 1. See README for explanation (-o option).
-;                 .byte $80 ; Initial value for the bit reservoir. Don't ever change.
-;                 .word out_addr  ; Address to place decompressed data
-;                 .word comp_data   ; Address of data to decompress.
-                
 ;--------------------------------------------------
-; Decompress ZX0 data (6502 optimized format)
 ;
-; caller must fill in:
+; Decompress ZX0 data (6502 optimized format) - slightly butchered
+; version of zx02-small.asm. 
+;
+; on entry, caller must have filled in:
 ;
 ; ZX0_src - where to read compressed data from
 ;
 ; ZX0_dst - where to write uncompressed data to
 ;
+; ZX0_resume_state - set bit 7 if decomppression should be resumable. if
+; ZX0_src MSB hits src_buf_end_page, the call will return, ready to
+; run again from where it left off with the next lump of data.
+; (Reinitialise ZX0_src to point to the start of the buffer again.)
+;
+; on exit:
+;
+; ZX0_resume_state - if bit 7 was set on entry: bit 7 is clear if
+; decompression complete, or set if still more data required.
+;
 ; initial offset is (for now) always 0.
 
 full_decomp: .block
-; Get initialization block
+                tsx
+                stx entry_s
+
+                lda ZX0_resume_state
+                cmp #%11000000
+                ; taken if bit 7 (resumable) and bit 6 (resume state)
+                bcs get_src_byte.resume 
+                
                 lda #$80
                 sta bitr
 
                 stz offset+0
                 stz offset+1
                 
-;                 ldx #6
-
-; copy_init:
-;                 lda zx0_ini_block,x
-;                 sta offset,x
-;                 dex
-;                 bpl copy_init
-
-                ; Init: X = -2
-                ; dex
-                ;ldx #$fe
-
                 ; Decode literal: Copy next N bytes from compressed file
                 ;    Elias(length)  byte[1]  byte[2]  ...  byte[N]
 decode_literal:
@@ -596,13 +614,6 @@ decode_literal:
 
                 clc             ; copy from src
                 jsr copy_bytes
-; copy_src_bytes_loop:
-;                 jsr get_src_byte
-;                 jsr put_dest_byte
-;                 dey
-;                 bne copy_src_bytes_loop
-;                 asl bitr
-                ;jsr   put_byte  ; copy from (ZX0_src)
                 bcs   dzx0s_new_offset
 
                 ; Copy from last offset (repeat N bytes from last offset)
@@ -619,23 +630,12 @@ dzx0s_copy:
                 lda ZX0_dst+1
                 sbc offset+1
                 sta pntr+1
-;                 ldx #$fe
-; sbc1:
-;                 lda   ZX0_dst+2,x
-;                 sbc   offset+2,x
-;                 sta   pntr+2,x
-;                 inx
-;                 bne   sbc1
 
+                ; TODO - will C always be set from the pointer
+                ; adjustment?
                 sec             ; copy from pntr
                 jsr copy_bytes
 
-; copy_pntr_bytes_loop:
-;                 jsr get_pntr_byte
-;                 jsr put_dest_byte
-;                 dey
-;                 bne copy_pntr_bytes_loop
-;                 asl bitr
                 bcc   decode_literal
 
                 ; Copy from new offset (repeat N bytes from new offset)
@@ -688,36 +688,78 @@ get_elias:
 elias_skip1:
                 txa
                 bcs   elias_loop
-                ; Got ending bit, stop reading
+                ; Got ending bit, stop reading with C=0
                 rts
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;-------------------------------------------------------------------------
+
+; hit end of data. indicate no resume.
+exit:
+                lsr ZX0_resume_state
+                rts
+                
+;-------------------------------------------------------------------------
 
 ; must preserve X/Y/C
-get_src_byte:
+get_src_byte: .block
                 lda (ZX0_src)
                 inc ZX0_src+0
-                bne +
+                bne done
                 inc ZX0_src+1
-+
-exit:
+                bit ZX0_resume_state
+                bpl done              ; not resumable
+                pha                   ; save byte read
+                lda ZX0_src+1         ; src address MSB
+                eor src_buf_end_page  ; compare to end address MSB
+                bne got_addr          ; taken if not at end of buffer
+
+                php             ; save C
+                phx             ; save X
+                phy             ; save Y
+
+                ; $101=Y
+                ; $102=X
+                ; $103=P
+                ; $104=A
+                ; $105...=stack stuff
+
+                tsx
+                ldy #0
+save_stack_loop:
+                lda $101,x
+                sta stack_buf,y
+                iny
+                inx
+                cpx entry_s
+                bne save_stack_loop
+                sty stack_buf_size
+
+                ; set bits 6+7 - resumable, and resume state present.
+                sec
+                ror ZX0_resume_state ; set bit 6 - state saved.
+                txs              ; restore initial stack position
+                rts              ; return to caller
+resume:
+                ldy stack_buf_size
+restore_stack_loop:
+                lda stack_buf-1,y
+                pha
+                dey
+                bne restore_stack_loop
+
+                ; ; indicate operation still resumable, but resume data
+                ; ; no longer present.
+                ; lda #$40
+                ; trb ZX0_resume_state
+
+                ply
+                plx
+                plp
+got_addr:
+                pla
+done:
                 rts
-
-; get_pntr_byte:
-;                 lda (pntr)
-;                 inc pntr+0
-;                 bne +
-;                 inc pntr+1
-; +
-;                 rts
-
-; put_dest_byte:
-;                 sta (ZX0_dst)
-;                 inc ZX0_dst+0
-;                 bne +
-;                 inc ZX0_dst+1
-; +
-;                 rts
+                .endblock
 
 copy_bytes: .block
                 ldy #0
@@ -738,10 +780,6 @@ pntr_byte:
 got_byte:
                 sta (ZX0_dst),y
                 iny
-;                 inc ZX0_dst+0
-;                 bne +
-;                 inc ZX0_dst+1
-; +
                 dex
                 bne loop
                 tya
@@ -758,32 +796,6 @@ carry:
                 rts
                 .endblock
                 
-; ; may read from (pntr)
-; get_byte:
-;                 lda   (ZX0_src+2,x)
-;                 inc   ZX0_src+2,x
-;                 bne   +
-;                 inc   ZX0_src+3,x
-; exit:
-; +
-;                 rts
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-; X=$fe to read from ZX0_src; X=$00 to read from pntr
-; put_byte:
-; ploop:
-;                 jsr   get_byte
-;                 sta   (ZX0_dst)
-;                 inc   ZX0_dst
-;                 bne   +
-;                 inc   ZX0_dst+1
-; +
-;                 dey
-;                 bne   ploop
-;                 asl   bitr
-;                 ldx   #$fe
-;                 rts
                 .endblock
                 .endsection
 

@@ -73,8 +73,16 @@ TEST_DISK_LIST_PY:=bin/test_disk_files.py
 ##########################################################################
 ##########################################################################
 
+define newline
+
+
+endef
+
+##########################################################################
+##########################################################################
+
 .PHONY: build
-build: _output_folders
+build: _output_folders $(BUILD)/GhoulsRevenge.bbc.dat
 # Build prerequisites.
 ifneq ($(UNAME),Windows_NT)
 	$(_V)test -f "$(ZX02)" || (cd "$(ZX02_PATH)" && $(GNU_MAKE) all)
@@ -83,17 +91,7 @@ endif
 # Create the files list.
 	$(_V)$(PYTHON) "bin/boot_builder.py" --list "$(TEST_DISK_LIST_PY)" constants --output "$(BUILD)/test_disk_files.generated.s65"
 
-# Pack some test files.
-	$(_V)$(MAKE) _pack_screen INDEX=0
-	$(_V)$(MAKE) _pack_screen INDEX=1
-	$(_V)$(MAKE) _pack_screen INDEX=2
-	$(_V)$(MAKE) _pack_screen INDEX=3
-	$(_V)$(MAKE) _pack_screen INDEX=4
-	$(_V)$(MAKE) _pack_screen INDEX=5
-	$(_V)$(MAKE) _pack_screen INDEX=6
-	$(_V)$(MAKE) _pack_screen INDEX=7
-	$(_V)$(MAKE) _pack_screen INDEX=8
-	$(_V)$(MAKE) _pack_screen INDEX=9
+	$(_V)$(MAKE) _pack_test_files
 
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
@@ -111,9 +109,18 @@ endif
 ##########################################################################
 ##########################################################################
 
-.PHONY:_pack_screen
-_pack_screen:
-	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)"
+$(BUILD)/GhoulsRevenge.bbc.dat : data/GhoulsRevenge.png
+	$(_V)$(PYTHON) "$(BEEB_BIN)/png2bbc.py" -o "$@" "$<" 2
+
+##########################################################################
+##########################################################################
+
+.PHONY:_pack_test_files
+_pack_test_files: _ZX02_TEST_FILES:=$(wildcard $(ZX02_PATH)/tests/files/*)
+_pack_test_files:
+	$(foreach INDEX,0 1 2 3 4 5 6 7 8 9,$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)" $(newline))
+	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BUILD)/GhoulsRevenge.bbc.dat" "$(BUILD)/GhoulsRevenge.bbc.zx02"
+	$(_V)$(SHELLCMD) copy-file "$(BUILD)/GhoulsRevenge.bbc.zx02" "$(BEEB_BUILD)/Z.GHOULS"
 
 ##########################################################################
 ##########################################################################
