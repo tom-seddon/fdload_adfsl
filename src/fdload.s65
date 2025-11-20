@@ -42,7 +42,7 @@ TOCEntry: .struct
 ltrack: .fill 1
 
                 ; sector to start reading from.
-sector: .fill 1
+sector_and_flags: .fill 1
 
                 ; negated size of file in bytes.
 negative_size: .fill 2
@@ -655,7 +655,7 @@ file_read_next_track: .block
                 jsr seek
 
                 ; do the read.
-                lda toc_entry.sector
+                lda toc_entry.sector_and_flags
                 and #$0f
                 jsr read
 
@@ -666,9 +666,9 @@ file_read_next_track: .block
                 ; always start from sector 0 on subsequent tracks.
                 inc toc_entry.ltrack
 
-                lda toc_entry.sector
+                lda toc_entry.sector_and_flags
                 and #$f0
-                sta toc_entry.sector
+                sta toc_entry.sector_and_flags
 
                 ; bump bytes left by quantity read.
                 sec
@@ -691,7 +691,7 @@ get_read_byte_counter:
                 ; MSB of negative amount of data left in sector.
                 ; -4096=$f000, -256=$ff00 - the constant can be
                 ; -generated from the sector number.
-                lda toc_entry.sector
+                lda toc_entry.sector_and_flags
                 ora #$f0
                 
                 bcs in_last_4KB ; taken if <=4096 bytes left in file
