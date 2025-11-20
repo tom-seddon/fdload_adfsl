@@ -47,7 +47,7 @@ BEEB_BIN:=$(PWD)/submodules/beeb/bin
 BUILD:=$(PWD)/build
 
 # Where the BeebLink volume lives.
-BEEBLINK_VOLUME:=$(PWD)/beeb/adfsl_fixed_layout
+BEEBLINK_VOLUME:=$(PWD)/beeb/fdload_adfsl
 
 # Where BBC build output goes.
 BEEB_BUILD:=$(BEEBLINK_VOLUME)/Z
