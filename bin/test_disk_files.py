@@ -3,6 +3,9 @@ import boot_builder,os.path
 # List of files that go into the build is defined here.
 #
 # Files will be arranged on disk in the specific order given.
+#
+# This gets called more than once during the build and the results
+# must be the same each time.
 def make_files_list():
     drive1='''beeb/adfsl_fixed_layout/1/'''
     files=[]
@@ -21,10 +24,12 @@ def make_files_list():
         files.append(boot_builder.File(path=os.path.join(drive1,'''$.PSCREEN%d'''%i),
                                     ident='pscreen%d'%i))
 
-    files.append(boot_builder.File(path='build/GhoulsRevenge.bbc.zx02',
-                                   ident='ghouls_revenge_zx02'))
-    files.append(boot_builder.File(path='build/TitleScreen_BBC.bbc.zx02',
-                                   ident='stunt_car_racer_zx02'))
+    files.append(boot_builder.File(path='build/GhoulsRevenge.bbc.dat',
+                                   ident='ghouls_revenge_zx02',
+                                   compressed=True))
+    
+    files.append(boot_builder.File(path='build/TitleScreen_BBC.bbc.dat',
+                                   ident='stunt_car_racer_zx02',
+                                   compressed=True))
 
     return files
-

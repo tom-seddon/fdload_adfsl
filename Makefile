@@ -45,14 +45,12 @@ BEEB_BIN:=$(PWD)/submodules/beeb/bin
 
 # Where intermediate build output goes (absolute path).
 BUILD:=$(PWD)/build
-TEST_DISK_CONTENTS:=$(BUILD)/test_disk
 
 # Where the BeebLink volume lives.
 BEEBLINK_VOLUME:=$(PWD)/beeb/adfsl_fixed_layout
 
 # Where BBC build output goes.
 BEEB_BUILD:=$(BEEBLINK_VOLUME)/Z
-BEEB_FDLOAD_FILES:=$(BEEBLINK_VOLUME)/Y
 
 # ZX02 stuff.
 ZX02_PATH:=$(PWD)/submodules/zx02
@@ -62,13 +60,19 @@ else
 ZX02:=$(ZX02_PATH)/build/zx02
 endif
 
+# I just don't seem to be able to decide how I want this to work.
 export ZX02PACK_ZX02=$(ZX02)
 export ZX02PACK_CACHE=$(BUILD)/zx02_cache
+BUILDER_ZX02PACK_ARGS:=--zx02pack-zx02 "$(ZX02PACK_ZX02)" --zx02pack-cache "$(ZX02PACK_CACHE)"
 
 ##########################################################################
 ##########################################################################
 
 TEST_DISK_LIST_PY:=bin/test_disk_files.py
+TEST_DISK_INTERMEDIATES:=$(BUILD)/test_disk/intermediates
+TEST_DISK_CONTENTS:=$(BUILD)/test_disk/contents
+TEST_DISK_BUILDER_ARGS:=--list "$(TEST_DISK_LIST_PY)" --intermediate-folder "$(TEST_DISK_INTERMEDIATES)" $(BUILDER_ZX02PACK_ARGS)
+TEST_DISK_BEEBLINK_DRIVE:=Y
 
 ##########################################################################
 ##########################################################################
@@ -89,22 +93,23 @@ ifneq ($(UNAME),Windows_NT)
 endif
 
 # Create the files list.
-	$(_V)$(PYTHON) "bin/boot_builder.py" --list "$(TEST_DISK_LIST_PY)" constants --output "$(BUILD)/test_disk_files.generated.s65"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/test_disk_files.generated.s65"
 
-	$(_V)$(MAKE) _pack_test_files
+#	$(_V)$(MAKE) _pack_test_files
 
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 
 # Build the big file.
-	$(_V)$(PYTHON) "bin/boot_builder.py" --list "$(TEST_DISK_LIST_PY)" build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" --output-data "$(BUILD)/test_disk.boot.dat" --output-toc-json "$(BUILD)/test_disk.toc.json" --output-toc-binary "$(BUILD)/test_disk.toc.dat" --output-beeblink "$(BEEB_FDLOAD_FILES)"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg"
+#--output-beeblink "$(BEEB_FDLOAD_FILES)"
 
 # Assemble a version of the fdload code that's vaguely testable from
 # BASIC.
 	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dtest_build=true"
 
-	$(_V)$(MAKE) _adfs_image "BOOT=$(BUILD)/test_disk.boot.dat" "DISK_CONTENTS=$(BUILD)/test_disk" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
+	$(_V)$(MAKE) _adfs_image "BOOT=$(TEST_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(TEST_DISK_CONTENTS)" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
 
 ##########################################################################
 ##########################################################################
@@ -118,14 +123,10 @@ $(BUILD)/TitleScreen_BBC.bbc.dat : data/TitleScreen_BBC.png
 ##########################################################################
 ##########################################################################
 
-.PHONY:_pack_test_files
-_pack_test_files: _ZX02_TEST_FILES:=$(wildcard $(ZX02_PATH)/tests/files/*)
-_pack_test_files:
-	$(foreach INDEX,0 1 2 3 4 5 6 7 8 9,$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)" $(newline))
-	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BUILD)/GhoulsRevenge.bbc.dat" "$(BUILD)/GhoulsRevenge.bbc.zx02"
-	$(_V)$(SHELLCMD) copy-file "$(BUILD)/GhoulsRevenge.bbc.zx02" "$(BEEB_BUILD)/Z.GHOULS"
-	$(_V)$(PYTHON) "bin/zx02pack.py" "$(BUILD)/TitleScreen_BBC.bbc.dat" "$(BUILD)/TitleScreen_BBC.bbc.zx02"
-	$(_V)$(SHELLCMD) copy-file "$(BUILD)/TitleScreen_BBC.bbc.zx02" "$(BEEB_BUILD)/Z.SCR"
+# .PHONY:_pack_test_files
+# _pack_test_files: _ZX02_TEST_FILES:=$(wildcard $(ZX02_PATH)/tests/files/*)
+# _pack_test_files:
+# 	$(foreach INDEX,0 1 2 3 4 5 6 7 8 9,$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)" $(newline))
 
 ##########################################################################
 ##########################################################################
@@ -160,6 +161,7 @@ _adfs_image:
 clean:
 	$(_V)$(SHELLCMD) rm-tree "$(BUILD)"
 	$(_V)$(SHELLCMD) rm-tree "$(BEEB_BUILD)"
+	$(_V)$(SHELLCMD) rm-tree "$(BEEBLINK_VOLUME)/$(TEST_DISK_BEEBLINK_DRIVE)"
 ifneq ($(UNAME),Windows_NT)
 	$(_V)cd "$(ZX02_PATH)" && $(GNU_MAKE) clean
 # doesn't seem to do a proper clean?

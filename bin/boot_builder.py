@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util
+import zx02pack
 
 ##########################################################################
 ##########################################################################
@@ -22,9 +23,10 @@ import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util
 # list file - a file with Python code in it that specifies the files
 # to include on the disk.
 #
-# 2. Use "boot_builder.py constants" to generate a .s65 with constants
-# for the file indexes. This gets included by any of the consuming
-# code.
+# 2. Use "boot_builder.py prepare" to compress any files that need
+# compressing (putting the result in the intermediate folder),
+# generate a .s65 with constants for the file indexes and sizes. This
+# gets included by any of the consuming code.
 #
 # 3. Use "boot_builder.py build" to build the actual big !BOOT file.
 # This takes paths to loader0 (C64 .PRG bootstrap program, poked into
@@ -32,6 +34,8 @@ import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util
 # program, loaded from disk then executed). The binary TOC is appended
 # to loader1, which is assumed to the fdload code plus anything else
 # and start the actual thing running.
+#
+# The intermediate folder 
 #
 # Perhaps obviously, the file list should be the same for the
 # constants and build run in a particular build.
@@ -55,21 +59,78 @@ import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util
 ##########################################################################
 ##########################################################################
 
+def load_file(path):
+    with open(path,'rb') as f: return f.read()
+
+##########################################################################
+##########################################################################
+
 # path = path of file on disk, relative to root of working copy.
 #
 # ident = suffix for the identifier used to refer to this file in
 # the 6502 code.
 
-File=collections.namedtuple('File','path ident')
+# TODO: could/should this be a dataclass?
+class File:
+    def __init__(self,path,ident,compressed=False):
+        self._path=path
+        self._ident=ident
+        self._compressed=compressed
+        self._options=None
+        self._disk_data=None    # may be compressed
+        self._memory_data=None
+
+    @property
+    def path(self): return self._path
+
+    @property
+    def ident(self): return self._ident
+
+    @property
+    def compressed(self): return self._compressed
+
+    def set_options(self,options):
+        assert self._options is None
+        self._options=options
+
+    def get_memory_data(self):
+        if self._memory_data is None:
+            self._memory_data=load_file(self._path)
+        assert self._memory_data is not None
+        return self._memory_data
+
+    def get_disk_data(self):
+        if self._disk_data is None:
+            if self.compressed:
+                self._disk_data=zx02pack.get_compressed_data(
+                    self.get_memory_data(),
+                    self._options.g_zx02pack_zx02_path,
+                    self._options.g_zx02pack_cache_path)
+            else: self._disk_data=self.get_memory_data()
+        assert self._disk_data is not None
+        return self._disk_data
+
+##########################################################################
+##########################################################################
+
+# def get_compressed_path(file,):
+#     assert file.compressed
+
+#     return os.path.join(options.g_intermediate_folder_path,
+#                         '%s.zx02'%file.ident)
+
+# def get_disk_path(file,options):
+#     if file.compressed: return get_compressed_path(file,options)
+#     else: return file.path
 
 ##########################################################################
 ##########################################################################
 
 # https://stackoverflow.com/a/51286749/1618406
-class JSONEncoder2(json.JSONEncoder):
-    def default(self,o):
-        if dataclasses.is_dataclass(o): return dataclasses.asdict(o)
-        return super().default(o)
+# class JSONEncoder2(json.JSONEncoder):
+#     def default(self,o):
+#         if dataclasses.is_dataclass(o): return dataclasses.asdict(o)
+#         return super().default(o)
 
 ##########################################################################
 ##########################################################################
@@ -90,7 +151,7 @@ def makedirs(path):
 PRG=collections.namedtuple('PRG','addr data')
 
 def load_prg(path):
-    with open(path,'rb') as f: data=f.read()
+    data=load_file(path)
 
     if len(data)<3: fatal('file too small to be a C64 .PRG: %s'%path)
 
@@ -165,19 +226,23 @@ def check_budget_and_pad(data,max_size,description):
 ##########################################################################
 ##########################################################################
 
-@dataclasses.dataclass
-class TOCEntry:
-    ident:str
-    path:str
-    index:int
-    ltrack:int
-    sector:int
-    num_bytes:int
+# @dataclasses.dataclass
+# class TOCEntry:
+#     ident:str
+#     path:str
+#     index:int
+#     ltrack:int
+#     sector:int
+#     num_bytes:int
+
+TOCEntry=collections.namedtuple('TOCEntry','file index ltrack sector num_bytes')
 
 ##########################################################################
 ##########################################################################
-    
+
 def build_cmd(files,options):
+    import zx02pack
+
     exec_data=get_exec_part(options)
 
     # Provided the *EXEC part is smaller than this, it will fit into
@@ -200,31 +265,28 @@ def build_cmd(files,options):
     
     lsector=32
     for file_index,file in enumerate(files):
-        with open(file.path,'rb') as f: file_data=f.read()
+        file_data=file.get_disk_data()
 
-        file_size_bytes=len(file_data)
-
-        if file_size_bytes==0: fatal('unsupported 0 byte file: %s'%file.path)
+        if len(file_data)==0: fatal('unsupported 0 byte file: %s'%file.path)
 
         check_budget(file_data,65536,file.path)
 
-        toc.append(TOCEntry(ident=file.ident,
-                            path=file.path,
+        toc.append(TOCEntry(file=file,
                             index=file_index,
                             ltrack=lsector//16,
                             sector=lsector%16,
                             num_bytes=len(file_data)))
-        file_contents.append(file_data)
+        #file_contents.append(file_data)
 
-        n=file_size_bytes%256
+        n=len(file_data)%256
         if n!=0: file_data+=get_filler(256-n)
         assert len(file_data)%256==0
 
         fdload_data+=file_data
         lsector+=len(file_data)//256
 
-    assert len(toc)==len(file_contents)
-    for i in range(len(toc)): assert toc[i].num_bytes==len(file_contents[i])
+    # assert len(toc)==len(file_contents)
+    # for i in range(len(toc)): assert toc[i].num_bytes==len(file_contents[i])
 
     max_fdload_data_size=(2*80-1)*16*256
     check_budget_and_pad(fdload_data,max_fdload_data_size,'output big file')
@@ -254,67 +316,80 @@ def build_cmd(files,options):
     output_data=exec_data+output_data
     assert len(output_data)==(2*80*16-7)*256
 
-    if options.output_data_path is not None:
-        with open(options.output_data_path,'wb') as f: f.write(output_data)
+    def open_output_file(name,mode):
+        path=os.path.join(options.g_intermediate_folder_path,name)
+        return open(path,mode)
 
-    if options.output_toc_json_path is not None:
-        toc_json={
-            'num_files':len(toc),
-            'files':toc,
-        }
-        with open(options.output_toc_json_path,'wt') as f:
-            json.dump(toc_json,f,indent=4*' ',cls=JSONEncoder2)
+    with open_output_file('boot.dat','wb') as f: f.write(output_data)
 
-    if options.output_toc_binary_path is not None:
-        toc_binary=bytearray()
-        toc_binary.append(len(toc))
-        for entry in toc:
-            assert entry.ltrack>=0 and entry.ltrack<160
-            toc_binary.append(entry.ltrack)
+    toc_json={
+        'num_files':len(toc),
+        'files':[],
+    }
+    for index,entry in enumerate(toc):
+        toc_json['files'].append({
+            'ident':entry.file.ident,
+            'path':entry.file.path,
+            'compressed':entry.file.compressed,
+            'index':index,
+            'ltrack':entry.ltrack,
+            'sector':entry.sector,
+            'num_bytes':entry.num_bytes,
+        })
+        
+    with open_output_file('toc.json','wt') as f:
+        json.dump(toc_json,f,indent=4*' ')
 
-            assert entry.sector>=0 and entry.sector<16
-            toc_binary.append(entry.sector)
+    toc_binary=bytearray()
+    toc_binary.append(len(toc))
+    for entry in toc:
+        assert entry.ltrack>=0 and entry.ltrack<160
+        toc_binary.append(entry.ltrack)
 
-            toc_binary.append(-entry.num_bytes&0xff)
-            toc_binary.append(-entry.num_bytes>>8&0xff)
-            
-        with open(options.output_toc_binary_path,'wb') as f:
-            f.write(toc_binary)
+        flags_and_sector=0
+        assert entry.sector>=0 and entry.sector<16
+        flags_and_sector|=entry.sector
+        if entry.file.compressed: flags_and_sector|=0x80
+        toc_binary.append(flags_and_sector)
 
-    if options.output_beeblink_path is not None:
-        makedirs(options.output_beeblink_path)
-        for i in range(len(file_contents)):
-            with open(os.path.join(options.output_beeblink_path,
-                                     '''$.%d'''%i),'wb') as f:
-                f.write(file_contents[i])
+        toc_binary.append(-entry.num_bytes&0xff)
+        toc_binary.append(-entry.num_bytes>>8&0xff)
 
-        count=bytearray()
-        count.append(len(file_contents))
-        with open(os.path.join(options.output_beeblink_path,'''$.COUNT'''),
-                  'wb') as f:
-            f.write(count)
+    with open_output_file('toc.dat','wb') as f: f.write(toc_binary)
+
+    # if options.output_beeblink_path is not None:
+    #     makedirs(options.output_beeblink_path)
+    #     for i in range(len(file_contents)):
+    #         with open(os.path.join(options.output_beeblink_path,
+    #                                  '''$.%d'''%i),'wb') as f:
+    #             f.write(file_contents[i])
+
+    #     count=bytearray()
+    #     count.append(len(file_contents))
+    #     with open(os.path.join(options.output_beeblink_path,'''$.COUNT'''),
+    #               'wb') as f:
+    #         f.write(count)
 
 ##########################################################################
 ##########################################################################
 
-def constants_cmd(files,options):
-    def constants(f):
+def prepare_cmd(files,options):
+    makedirs(options.g_intermediate_folder_path)
+    with open(options.output_asm_path,'wt') as f:
         for file_index,file in enumerate(files):
             f.write('file_%s=%d ; %s\n'%(file.ident,file_index,file.path))
-
-        f.write('num_files=%d\n'%len(files))
-
-    if options.output_path is None: constants(sys.stdout)
-    else:
-        with open(options.output_path,'wt') as f: constants(f)
 
 ##########################################################################
 ##########################################################################
 
 def main(argv):
     parser=argparse.ArgumentParser()
-    parser.add_argument('-l','--list',metavar='FILE',dest='list_py_path',required=True,help='''use Python script %(metavar)s to get files list''')
-    parser.set_defaults(fun=None)
+    parser.add_argument('-l','--list',metavar='FILE',dest='g_list_py_path',required=True,help='''use Python script %(metavar)s to get files list''')
+    parser.add_argument('--intermediate-folder',metavar='PATH',dest='g_intermediate_folder_path',required=True,help='''put intermediate file(s) somewhere in %(metavar)s''')
+    # I am too lazy to do the environment variable thing here. It
+    # doesn't matter as it's easy to dael with from the Makefile.
+    parser.add_argument('--zx02pack-zx02',metavar='PATH',dest='g_zx02pack_zx02_path',required=True,help='''treat %(metavar)s as path to zx02 for zx02''')
+    parser.add_argument('--zx02pack-cache',metavar='PATH',dest='g_zx02pack_cache_path',required=True,help='''use %(metavar)s as zx02pack cache path''')
 
     subparsers=parser.add_subparsers()
 
@@ -323,17 +398,17 @@ def main(argv):
         subparser.set_defaults(fun=fun)
         return subparser
 
-    constants_subparser=add_subparser('constants',constants_cmd,help='''generate constants source file''')
-    constants_subparser.add_argument('--output',metavar='FILE',dest='output_path',help='''write output to %(metavar)s rather than stdout''')
+    prepare_subparser=add_subparser('prepare',prepare_cmd,help='''find and compress files and generate a constants file with file indexes''')
+    prepare_subparser.add_argument('--output-asm',metavar='FILE',dest='output_asm_path',help='''write output to %(metavar)s rather than stdout''')
 
     build_subparser=add_subparser('build',build_cmd,help='''generate big data file''')
     build_subparser.add_argument('--loader0',metavar='FILE',required=True,dest='loader0_path',help='''read loader0 code from %(metavar)s, a C64 .prg''')
     build_subparser.add_argument('--loader1',metavar='FILE',required=True,dest='loader1_path',help='''read loader1 code from %(metavar)s, a C64 .prg''')
     build_subparser.add_argument('--vdu21',action='store_true',help='''add a VDU21 in the *EXECable part''')
-    build_subparser.add_argument('--output-data',metavar='FILE',dest='output_data_path',help='''write output to %(metavar)s''')
-    build_subparser.add_argument('--output-toc-json',metavar='FILE',dest='output_toc_json_path',help='''write TOC JSON to %(metavar)s''')
-    build_subparser.add_argument('--output-toc-binary',metavar='FILE',dest='output_toc_binary_path',help='''write TOC binary to %(metavar)s''')
-    build_subparser.add_argument('--output-beeblink',metavar='PATH',dest='output_beeblink_path',help='''write numbered BeebLink-friendly files to %(metavar)s''')
+    # build_subparser.add_argument('--output-data',metavar='FILE',dest='output_data_path',help='''write output to %(metavar)s''')
+    # build_subparser.add_argument('--output-toc-json',metavar='FILE',dest='output_toc_json_path',help='''write TOC JSON to %(metavar)s''')
+    # build_subparser.add_argument('--output-toc-binary',metavar='FILE',dest='output_toc_binary_path',help='''write TOC binary to %(metavar)s''')
+    # build_subparser.add_argument('--output-beeblink',metavar='PATH',dest='output_beeblink_path',help='''write numbered BeebLink-friendly files to %(metavar)s''')
     
     options=parser.parse_args(argv)
     if options.fun is None:
@@ -342,7 +417,7 @@ def main(argv):
 
     # https://stackoverflow.com/a/54956419/1618406
     spec=importlib.util.spec_from_file_location('file_list',
-                                                options.list_py_path)
+                                                options.g_list_py_path)
     file_list_module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(file_list_module)
 
@@ -352,6 +427,7 @@ def main(argv):
         if file.ident in idents_seen:
             fatal('duplicate ident in files list: %s'%file.ident)
         idents_seen.add(file.ident)
+        file.set_options(options)
 
     options.fun(files,options)
     

@@ -17,15 +17,12 @@ def load_file(path):
 def save_file(path,data):
     with open(path,'wb') as f: f.write(data)
 
-def main2(options):
-    if options.zx02_path is None: fatal('no zx02 path provided')
-    if options.cache_path is None: fatal('no cache path provided')
-
-    uncompressed_data=load_file(options.input_path)
-
+def get_compressed_data(uncompressed_data,
+                         zx02_path,
+                         cache_path):
     hash=hashlib.sha256(uncompressed_data).hexdigest()
 
-    cache_folder=os.path.join(options.cache_path,hash[:3])
+    cache_folder=os.path.join(cache_path,hash[:3])
     cache_compressed_path=os.path.join(cache_folder,'%s.zx02'%hash)
 
     if not os.path.isfile(cache_compressed_path):
@@ -33,14 +30,31 @@ def main2(options):
 
         cache_uncompressed_path=os.path.join(cache_folder,'%s.dat'%hash)
 
+        # TODO: do I really actually want/need this??? - though, no
+        # real harm done, the packing takes long enough, and it's not
+        # like the disk space will be a big problem
         save_file(cache_uncompressed_path,uncompressed_data)
 
-        argv=[options.zx02_path,
+        argv=[zx02_path,
               cache_uncompressed_path,
               cache_compressed_path]
         subprocess.run(argv,check=True)
 
-    compressed_data=load_file(cache_compressed_path)
+    return load_file(cache_compressed_path)
+
+##########################################################################
+##########################################################################
+
+def main2(options):
+    if options.zx02_path is None: fatal('no zx02 path provided')
+    if options.cache_path is None: fatal('no cache path provided')
+
+    uncompressed_data=load_file(options.input_path)
+
+    compressed_data=get_compressed_data(uncompressed_data,
+                                        options.zx02_path,
+                                        options.cache_path)
+
     save_file(options.output_path,compressed_data)
 
 ##########################################################################
