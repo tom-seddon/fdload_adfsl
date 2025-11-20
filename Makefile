@@ -114,7 +114,7 @@ endif
 
 # Assemble a version of the fdload code that's vaguely testable from
 # BASIC.
-	$(_V)$(MAKE) _asm PC=fdload BEEB=FDLOAD "TASS_EXTRA_ARGS=-Dtest_build=true"
+	$(_V)$(MAKE) _asm PC=fdload_test BEEB=FDLOAD
 
 	$(_V)$(MAKE) _adfs_image "BOOT=$(TEST_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(TEST_DISK_CONTENTS)" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
 

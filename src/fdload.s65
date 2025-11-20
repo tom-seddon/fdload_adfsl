@@ -1,24 +1,24 @@
                 .include "../submodules/beeb/include/beeb.s65"
 
-;-------------------------------------------------------------------------
+; ;-------------------------------------------------------------------------
 
-ZP_BASE=$80
-CODE_BASE=$2800
+; ZP_BASE=$80
+; CODE_BASE=$2800
 
-;-------------------------------------------------------------------------
+; ;-------------------------------------------------------------------------
 
                 .weak
-test_build=false
-debug=false
+fdload_debug=false
+fdload_verbose=false
                 .endweak
 
-                .if test_build
-                .weak
-verbose=false
-                .endweak
-                .else
-verbose=false
-                .endif
+;                 .if test_build
+;                 .weak
+; verbose=false
+;                 .endweak
+;                 .else
+; verbose=false
+;                 .endif
 
 ;-------------------------------------------------------------------------
 
@@ -74,25 +74,25 @@ not_dden=32
                 
 ;-------------------------------------------------------------------------
 
-*=ZP_BASE
-                .dsection fixed_zp
-                .dsection zx02_zp
-                .dsection other_zp
-                .cerror *>ZP_BASE+256
+; *=ZP_BASE
+;                 .dsection fixed_zp
+;                 .dsection zx02_zp
+;                 .dsection other_zp
+;                 .cerror *>ZP_BASE+256
 
-*=CODE_BASE
-                .dsection fdload_code
-                .dsection zx02_code
-zx02_workspace:
-                .dsection zx02_workspace
+; *=CODE_BASE
+;                 .dsection fdload_code
+;                 .dsection zx02_code
+; zx02_workspace:
+;                 .dsection zx02_workspace
 
-toc_header: .dstruct TOCHeader
-toc_entries:
-                .if test_build
-*=toc_header
-                .binary "../build/test_disk/intermediates/toc.dat"
-                .endif
-                .cerror *>$3000
+; toc_header: .dstruct TOCHeader
+;toc_entries:
+;                 .if test_build
+; *=toc_header
+;                 .binary "../build/test_disk/intermediates/toc.dat"
+;                 .endif
+;                 .cerror *>$3000
 
 ;-------------------------------------------------------------------------
 
@@ -109,17 +109,14 @@ type_i_flags=h_flag_value|%101
                 
 ;-------------------------------------------------------------------------
 
-                .section fixed_zp
+                .section fdload_zp
                 ; bit 7 set if busy: the motor status bit is repurposed.
 command_status: .fill 1
 read_byte_addr: .fill 2
 read_byte_counter: .fill 2
                 .endsection
 
-                .section other_zp
-                .if debug
-num_nmis: .fill 1
-                .endif
+                .section fdload_other_zp
 argptr: .fill 2
 toc_entry: .dstruct TOCEntry
                 .endsection
@@ -128,33 +125,10 @@ toc_entry: .dstruct TOCEntry
 
                 .section fdload_code
 
-                .if test_build
-                jmp init        ; +0
-                jmp restore     ; +3
-                jmp seek        ; +6
-                jmp read        ; +9
-                .if debug       ; +12
-                lda num_nmis
-                .else
-                lda #0
-                .endif
-                rts
-                jmp test_load_uncompressed_file   ; +15 $0f
-                lda #ZP_BASE    ; +18
-                rts
-                lda #ZX0_src   ; +21 $15
-                rts
-                lda #ZX0_dst   ; +24 $18
-                rts
-                jmp test_full_decomp ; +27 $1b
-                jmp full_decomp      ; +30 $1e
-                jmp get_zx02_workspace ; +33 $21
-                jmp test_load_compressed_file ; +36 $24
-                .endif
 
 ;-------------------------------------------------------------------------
 
-                .if verbose
+                .if fdload_verbose
 print_value:
                 pha
                 lda #' '
@@ -189,48 +163,6 @@ print_nybble:
                 
 ;-------------------------------------------------------------------------
 
-                .if test_build
-test_load_uncompressed_file: .block
-                sta $ffff
-                stx load_addr+0
-                sty load_addr+1
-                sta file_index
-                jsr load_uncompressed_file
-load_addr:
-                .word $3000
-file_index: .byte 0
-                sta $fffe
-                rts
-                .endblock
-
-test_load_compressed_file: .block
-                sta $ffff
-                stx lda_byte+1
-                sty lda_byte+2
-                ldx #3
-loop:
-lda_byte: lda $ffff,x
-                sta args,x
-                dex
-                bpl loop
-                jsr load_compressed_file
-args: .fill 4
-                sta $fffe
-                rts
-                .endblock
-
-test_full_decomp:
-                lsr ZX0_resume_state
-                jmp full_decomp
-
-get_zx02_workspace:
-                ldx #<zx02_workspace
-                ldy #>zx02_workspace
-                rts
-                .endif
-                
-;-------------------------------------------------------------------------
-
 init: .block
                 jsr cancel
 
@@ -242,9 +174,6 @@ copy_nmi_routine_loop:
                 bpl copy_nmi_routine_loop
 
                 stz command_status
-                .if debug
-                stz num_nmis
-                .endif
 
                 rts
                 .endblock
@@ -288,7 +217,7 @@ perform_seek_type_command: .block
                 .cerror *!=wait_for_command
                 .endblock
 wait_for_command: .block
-                .if verbose
+                .if fdload_verbose
                 lda #'W'
                 jsr oswrch
                 .endif
@@ -306,7 +235,7 @@ command_done:
                 lda fdc.status
                 sta command_status
                 
-                .if verbose
+                .if fdload_verbose
                 lda #8
                 jsr oswrch
                 lda #' '
@@ -324,7 +253,7 @@ command_done:
 ; Will also select appropriate side.
 
 seek: .block
-                .if verbose
+                .if fdload_verbose
                 phx
                 ldx #'T'
                 jsr print_value
@@ -349,7 +278,7 @@ seek: .block
 ; read_byte_counter.w = negated number of bytes to read
 
 read: .block
-                .if verbose
+                .if fdload_verbose
                 phx
                 ldx #'S'
                 jsr print_value
@@ -366,7 +295,7 @@ read: .block
                 ; xxx1xxxx = read multiple sectors
                 lda #%10010000|h_flag_value ; Type II Read Sector
                 sta fdc.command
-                .if verbose
+                .if fdload_verbose
                 phx
                 ldx #'C'
                 jsr print_value

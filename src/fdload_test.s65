@@ -1,0 +1,89 @@
+;-------------------------------------------------------------------------
+
+*=$70
+fdload_zp:
+                .dsection fdload_zp
+                .dsection fdload_other_zp
+                .dsection zx02_zp
+                .cerror *>$90
+
+;-------------------------------------------------------------------------
+
+*=$2800
+                .dsection test_stuff
+                .dsection fdload_code
+                .dsection zx02_code
+zx02_workspace:
+                .dsection zx02_workspace
+toc_header: .dstruct TOCHeader
+toc_entries:
+*=toc_header
+                .binary "../build/test_disk/intermediates/toc.dat"
+                .cerror *>$3000
+
+;-------------------------------------------------------------------------
+
+                .section test_stuff
+                
+                jmp init        ; +0
+                jmp restore     ; +3
+                jmp seek        ; +6
+                jmp read        ; +9
+                lda #0          ; +12 (now redundant)
+                rts
+                jmp test_load_uncompressed_file   ; +15 $0f
+                lda #fdload_zp    ; +18
+                rts
+                lda #ZX0_src   ; +21 $15
+                rts
+                lda #ZX0_dst   ; +24 $18
+                rts
+                jmp test_full_decomp ; +27 $1b
+                jmp full_decomp      ; +30 $1e
+                jmp get_zx02_workspace ; +33 $21
+                jmp test_load_compressed_file ; +36 $24
+
+test_load_uncompressed_file: .block
+                sta $ffff
+                stx load_addr+0
+                sty load_addr+1
+                sta file_index
+                jsr load_uncompressed_file
+load_addr:
+                .word $3000
+file_index: .byte 0
+                sta $fffe
+                rts
+                .endblock
+
+test_load_compressed_file: .block
+                sta $ffff
+                stx lda_byte+1
+                sty lda_byte+2
+                ldx #3
+loop:
+lda_byte: lda $ffff,x
+                sta args,x
+                dex
+                bpl loop
+                jsr load_compressed_file
+args: .fill 4
+                sta $fffe
+                rts
+                .endblock
+
+test_full_decomp:
+                lsr ZX0_resume_state
+                jmp full_decomp
+
+get_zx02_workspace:
+                ldx #<zx02_workspace
+                ldy #>zx02_workspace
+                rts
+                
+                .endsection
+
+;-------------------------------------------------------------------------
+
+                .include "fdload.s65"
+                
