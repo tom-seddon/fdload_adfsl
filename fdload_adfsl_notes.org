@@ -91,7 +91,7 @@ Not productized. Might not work if you're not me.
 * dir-locals
 
 #+begin_src elisp
-  ((nil . ((compile-command . "cd ~/github/adfsl_fixed_layout && make _tom"))))
+  ((nil . ((compile-command . "cd ~/github/fdload_adfsl && make _tom"))))
 #+end_src
 
 * ADFS Stuff

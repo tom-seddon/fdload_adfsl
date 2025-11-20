@@ -7,7 +7,7 @@ import boot_builder,os.path
 # This gets called more than once during the build and the results
 # must be the same each time.
 def make_files_list():
-    drive1='''beeb/adfsl_fixed_layout/1/'''
+    drive1='''beeb/fdload_adfsl/1/'''
     files=[]
 
     # 1 byte. Occupies L2 S0.
