@@ -97,17 +97,19 @@ endif
 
 #	$(_V)$(MAKE) _pack_test_files
 
-# Assemble stuff
-	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
-	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
-
 # Warm up the ZX02 cache in parallel. 
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 
 # Build the big file.
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build-fdload-data
 
-	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg"
-#--output-beeblink "$(BEEB_FDLOAD_FILES)"
+# Assemble stuff
+	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
+	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
+
+# Put together disk contents
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build-disk-contents --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" "$(TEST_DISK_CONTENTS)"
+
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) beeblink "$(TEST_DISK_BEEBLINK_PATH)"
 
 # Assemble a version of the fdload code that's vaguely testable from
@@ -129,19 +131,11 @@ $(BUILD)/TitleScreen_BBC.bbc.dat : data/TitleScreen_BBC.png
 ##########################################################################
 
 .PHONY:_adfs_image
-_adfs_image: BOOT=$(error must specify BOOT)
 _adfs_image: DISK_CONTENTS=$(error must specify DISK_CONTENTS)
 _adfs_image: PC_IMAGE=$(error must specify PC_IMAGE)
 _adfs_image: BBC_IMAGE=$(error must specify BBC_IMAGE)
 _adfs_image: TITLE=
 _adfs_image:
-	$(_V)$(SHELLCMD) mkdir "$(DISK_CONTENTS)"
-
-# Form ADFS disk contents in $(DISK_CONTENTS): !BOOT and its .inf.
-#	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BOOT)"
-	$(_V)$(SHELLCMD) copy-file "$(BOOT)" "$(DISK_CONTENTS)/!BOOT"
-	$(_V)$(SHELLCMD) copy-file "src/!BOOT.inf" "$(DISK_CONTENTS)/!BOOT.inf"
-
 # Create the ADFS disk image.
 	$(_V)$(PYTHON) "$(BEEB_BIN)/adf_create.py" -o "$(BUILD)/$(PC_IMAGE)" --opt4 3 --title "$(TITLE)" "$(DISK_CONTENTS)/!BOOT"
 

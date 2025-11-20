@@ -240,28 +240,19 @@ TOCEntry=collections.namedtuple('TOCEntry','file index ltrack sector num_bytes')
 ##########################################################################
 ##########################################################################
 
-def build_cmd(files,options):
-    exec_data=get_exec_part(options)
+def get_fdload_data_path(options):
+    return os.path.join(options.g_intermediate_folder_path,
+                        'fdload.dat')
 
-    # Provided the *EXEC part is smaller than this, it will fit into
-    # track 0, simplifying the pretence that ADFS and fdload have
-    # compatible views of the disk.
-    #
-    # (The ADFS metadata is 7 sectors, so there's 9 sectors left in
-    # track 0.)
-    check_budget_and_pad(exec_data,9*256,'loader8 in *EXEC form')
+MAX_FDLOAD_DATA_SIZE=2*79*16*256
 
+def build_fdload_data_cmd(files,options):
     fdload_data=bytearray()
     
-    # Space for loader1.
-    loader1=load_prg(options.loader1_path)
-    check_budget_and_pad(loader1.data,4096,'loader1 data')
-    fdload_data+=loader1.data
-
     toc=[]
     file_contents=[]
 
-    assert len(fdload_data)==4096
+    # assert len(fdload_data)==4096
     for file_index,file in enumerate(files):
         file_data=file.get_disk_data()
 
@@ -270,7 +261,7 @@ def build_cmd(files,options):
         check_budget(file_data,65536,file.path)
 
         assert len(fdload_data)%256==0
-        lsector=16+len(fdload_data)//256
+        lsector=32+len(fdload_data)//256
         
         toc.append(TOCEntry(file=file,
                             index=file_index,
@@ -283,42 +274,44 @@ def build_cmd(files,options):
         n=len(fdload_data)%256
         if n!=0: fdload_data+=get_filler(256-n)
 
-    # assert len(toc)==len(file_contents)
-    # for i in range(len(toc)): assert toc[i].num_bytes==len(file_contents[i])
+    check_budget(fdload_data,MAX_FDLOAD_DATA_SIZE,'fdload data')
 
-    max_fdload_data_size=(2*80-1)*16*256
-    check_budget_and_pad(fdload_data,max_fdload_data_size,'output big file')
+    # # assert len(toc)==len(file_contents)
+    # # for i in range(len(toc)): assert toc[i].num_bytes==len(file_contents[i])
 
-    # The output big file is in fdload logical sector order. Rearrange
-    # so that it is in the ADFS sector order expected by adf_create.
-    output_data=bytearray()
-    for side in range(2):
-        for track in range(80):
-            if track==0 and side==0:
-                # there is no fdload data in this area.
-                continue
+    # # max_fdload_data_size=(2*80-1)*16*256
+    # # check_budget_and_pad(fdload_data,max_fdload_data_size,'output big file')
 
-            ltrack=track*2+side-1
-            assert ltrack>=0 and ltrack<159
+    # # The output big file is in fdload logical sector order. Rearrange
+    # # so that it is in the ADFS sector order expected by adf_create.
+    # output_data=bytearray()
+    # for side in range(2):
+    #     for track in range(80):
+    #         if track==0 and side==0:
+    #             # there is no fdload data in this area.
+    #             continue
+
+    #         ltrack=track*2+side-1
+    #         assert ltrack>=0 and ltrack<159
             
-            i=ltrack*4096
-            j=len(output_data)
-            if i>len(fdload_data): output_data+=bytearray(4096)
-            else: output_data+=fdload_data[i:i+4096]
+    #         i=ltrack*4096
+    #         j=len(output_data)
+    #         if i>len(fdload_data): output_data+=bytearray(4096)
+    #         else: output_data+=fdload_data[i:i+4096]
 
-            # if track>=1:
-            #     output_data[j+0]=side
-            #     output_data[j+1]=track
+    #         # if track>=1:
+    #         #     output_data[j+0]=side
+    #         #     output_data[j+1]=track
 
-    # Prepend the 9 sectors of loader0.
-    output_data=exec_data+output_data
-    assert len(output_data)==(2*80*16-7)*256
+    # # Prepend the 9 sectors of loader0.
+    # output_data=exec_data+output_data
+    # assert len(output_data)==(2*80*16-7)*256
 
     def open_output_file(name,mode):
         path=os.path.join(options.g_intermediate_folder_path,name)
         return open(path,mode)
 
-    with open_output_file('boot.dat','wb') as f: f.write(output_data)
+    save_file(get_fdload_data_path(options),fdload_data)
 
     toc_json={
         'num_files':len(toc),
@@ -370,6 +363,60 @@ def build_cmd(files,options):
 
 ##########################################################################
 ##########################################################################
+    
+def build_disk_contents_cmd(files,options):
+    exec_data=get_exec_part(options)
+
+    # Provided the *EXEC part is smaller than this, it will fit into
+    # track 0, simplifying the pretence that ADFS and fdload have
+    # compatible views of the disk.
+    #
+    # (The ADFS metadata is 7 sectors, so there's 9 sectors left in
+    # track 0.)
+    check_budget_and_pad(exec_data,9*256,'loader8 in *EXEC form')
+
+    # Load fdload data.
+    fdload_data=load_file(get_fdload_data_path(options))
+    check_budget(fdload_data,MAX_FDLOAD_DATA_SIZE,'fdload data')
+    
+    # Load loader1.
+    loader1=load_prg(options.loader1_path)
+    check_budget_and_pad(loader1.data,4096,'loader1 data')
+
+    # Arrange the data in ADFS sector order.
+    output_data=bytearray()
+    for side in range(2):
+        for track in range(80):
+            if track==0 and side==0:
+                # sort this area out later.
+                pass
+            elif track==0 and side==1:
+                # this is where loader1 goes.
+                output_data+=loader1.data
+            else:
+                ltrack=(track-1)*2+side
+                assert ltrack>=0 and ltrack<159
+            
+                i=ltrack*4096
+                j=len(output_data)
+                if i>len(fdload_data): output_data+=bytearray(4096)
+                else:
+                    output_data+=fdload_data[i:i+4096]
+                    output_data+=get_filler((4096-len(output_data)%4096)%4096)
+
+    # Prepend the *EXEC-friendly part.
+    output_data=exec_data+output_data
+    assert len(output_data)==(2*80*16-7)*256,len(output_data)
+
+    makedirs(options.output_folder_path)
+    save_file(os.path.join(options.output_folder_path,'!BOOT'),output_data)
+
+    with open(os.path.join(options.output_folder_path,'!BOOT.inf'),
+              'wt') as f:
+        f.write('$.!BOOT FFFFFFFF FFFFFFFF\n')
+    
+##########################################################################
+##########################################################################
 
 def prepare_cmd(files,options):
     makedirs(options.g_intermediate_folder_path)
@@ -381,12 +428,12 @@ def prepare_cmd(files,options):
 ##########################################################################
 
 def beeblink_cmd(files,options):
-    makedirs(options.output_path)
+    makedirs(options.output_folder_path)
     for file_index,file in enumerate(files):
-        save_file(os.path.join(options.output_path,'$.%d'%file_index),
+        save_file(os.path.join(options.output_folder_path,'$.%d'%file_index),
                   file.get_disk_data())
 
-    save_file(os.path.join(options.output_path,'$.COUNT'),
+    save_file(os.path.join(options.output_folder_path,'$.COUNT'),
               struct.pack('<I',len(files)))
 
 ##########################################################################
@@ -414,13 +461,17 @@ def main(argv):
     warm_zx02_cache_subparser=add_subparser('warm-zx02-cache',warm_zx02_cache_cmd,help='''warm up zx02 cache as much as possible''')
     warm_zx02_cache_subparser.add_argument('--make',metavar='PATH',dest='make_path',default='make',help='''use %(metavar)s as path to GNU Make. Default: %(default)s''')
 
-    build_subparser=add_subparser('build',build_cmd,help='''generate big data file''')
-    build_subparser.add_argument('--loader0',metavar='FILE',required=True,dest='loader0_path',help='''read loader0 code from %(metavar)s, a C64 .prg''')
-    build_subparser.add_argument('--loader1',metavar='FILE',required=True,dest='loader1_path',help='''read loader1 code from %(metavar)s, a C64 .prg''')
-    build_subparser.add_argument('--vdu21',action='store_true',help='''add a VDU21 in the *EXECable part''')
+    build_fdload_data_subparser=add_subparser('build-fdload-data',build_fdload_data_cmd,help='''generate fdload-friendly part of big data''')
+
+    build_disk_contents_subparser=add_subparser('build-disk-contents',build_disk_contents_cmd,help='''generate disk contents''')
+    
+    build_disk_contents_subparser.add_argument('--loader0',metavar='FILE',required=True,dest='loader0_path',help='''read loader0 code from %(metavar)s, a C64 .prg''')
+    build_disk_contents_subparser.add_argument('--loader1',metavar='FILE',required=True,dest='loader1_path',help='''read loader1 code from %(metavar)s, a C64 .prg''')
+    build_disk_contents_subparser.add_argument('--vdu21',action='store_true',help='''add a VDU21 in the *EXECable part''')
+    build_disk_contents_subparser.add_argument('output_folder_path',metavar='FOLDER',help='''write disk contents to %(metavar)s''')
 
     beeblink_subparser=add_subparser('beeblink',beeblink_cmd,help='''generate BeebLink DFS-type drive with contents of disk''')
-    beeblink_subparser.add_argument('output_path',metavar='PATH',help='''write files to %(metavar)s''')
+    beeblink_subparser.add_argument('output_folder_path',metavar='FOLDER',help='''write files to %(metavar)s''')
     
     options=parser.parse_args(argv)
     if options.fun is None:
