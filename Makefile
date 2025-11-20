@@ -55,7 +55,7 @@ BEEB_BUILD:=$(BEEBLINK_VOLUME)/Z
 # ZX02 stuff.
 ZX02_PATH:=$(PWD)/submodules/zx02
 ifeq ($(UNAME),Windows_NT)
-$(error TODO: zx02...)
+ZX02:=$(PWD)/bin/zx02.exe
 else
 ZX02:=$(ZX02_PATH)/build/zx02
 endif
@@ -144,7 +144,7 @@ _adfs_image:
 # Form ADFS disk contents in $(DISK_CONTENTS): !BOOT and its .inf.
 #	$(_V)$(SHELLCMD) concat -o "$(DISK_CONTENTS)/!BOOT" --pad 653568 "$(BOOT)"
 	$(_V)$(SHELLCMD) copy-file "$(BOOT)" "$(DISK_CONTENTS)/!BOOT"
-	$(_V)echo "$$.!BOOT FFFFFFFF FFFFFFFF" > "$(DISK_CONTENTS)/!BOOT.inf"
+	$(_V)$(SHELLCMD) copy-file "src/!BOOT.inf" "$(DISK_CONTENTS)/!BOOT.inf"
 
 # Create the ADFS disk image.
 	$(_V)$(PYTHON) "$(BEEB_BIN)/adf_create.py" -o "$(BUILD)/$(PC_IMAGE)" --opt4 3 --title "$(TITLE)" "$(DISK_CONTENTS)/!BOOT"
@@ -196,3 +196,15 @@ _tom_emacs:
 	$(_V)$(MAKE) build
 #	curl --connect-timeout 0.25 --silent -G 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
 	curl --connect-timeout 0.25 --silent -H 'Content-Type:application/binary' --upload-file '$(_DISK)' 'http://localhost:48075/mount/b2?drive=0&name=$(_DISK)'
+
+##########################################################################
+##########################################################################
+
+# Phony target for manual invocation. It doesn't run on every build,
+# because it needs the VC++ command line tools on the path, something
+# I don't want to require.
+
+.PHONY:zx02_windows
+zx02_windows: SRC:=$(PWD)/submodules/zx02/src
+zx02_windows: _output_folders
+	cd "$(BUILD)" && cl /W4 /Zi /O2 /Fe$(PWD)/bin/zx02.exe "$(SRC)/compress.c" "$(SRC)/memory.c" "$(SRC)/optimize.c" "$(SRC)/zx02.c"
