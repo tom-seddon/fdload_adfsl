@@ -26,7 +26,7 @@ boot_builder does multiple things:
    operator statements, then a `CALL` to set it going.) loader0's size
    is limited and boot_builder will barf if it's too large
 4. sort out loader1, the secondary loader. This starts at ADFS sector
-   1280 (H0 T0 S0) and can occupy max 4096 bytes/1 track in total,
+   1280 (H1 T0 S0) and can occupy max 4096 bytes/1 track in total,
    including the binary TOC that gets appended to it
 5. append the files from steps 1 and 2 to the disk in the proper order
 
