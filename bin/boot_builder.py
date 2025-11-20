@@ -1,9 +1,18 @@
 #!/usr/bin/python3
-import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util,struct
-import zx02pack
+import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util,struct,hashlib,subprocess
 
 ##########################################################################
 ##########################################################################
+
+def fatal(msg):
+    sys.stderr.write('FATAL: %s\n'%msg)
+    sys.exit(1)
+
+##########################################################################
+##########################################################################
+
+def makedirs(path):
+    if not os.path.isdir(path): os.makedirs(path)
 
 def load_file(path):
     with open(path,'rb') as f: return f.read()
@@ -51,10 +60,17 @@ class File:
     def get_disk_data(self):
         if self._disk_data is None:
             if self.compressed:
-                self._disk_data=zx02pack.get_compressed_data(
-                    self.get_memory_data(),
-                    self._options.g_zx02pack_zx02_path,
-                    self._options.g_zx02pack_cache_path)
+                hash=hashlib.sha256(self.get_memory_data()).hexdigest()
+                c_folder=os.path.join(self._options.g_zx02_cache_path,
+                                      hash[:3])
+                c_path=os.path.join(c_folder,'%s.zx02'%hash)
+                if not os.path.isfile(c_path):
+                    makedirs(c_folder)
+                    argv=[self._options.g_zx02_path,
+                          self.path,
+                          c_path]
+                    subprocess.run(argv,check=True)
+                self._disk_data=load_file(c_path)
             else: self._disk_data=self.get_memory_data()
         assert self._disk_data is not None
         return self._disk_data
@@ -80,19 +96,6 @@ class File:
 #     def default(self,o):
 #         if dataclasses.is_dataclass(o): return dataclasses.asdict(o)
 #         return super().default(o)
-
-##########################################################################
-##########################################################################
-
-def fatal(msg):
-    sys.stderr.write('FATAL: %s\n'%msg)
-    sys.exit(1)
-
-##########################################################################
-##########################################################################
-
-def makedirs(path):
-    if not os.path.isdir(path): os.makedirs(path)
 
 ##########################################################################
 ##########################################################################
@@ -190,8 +193,6 @@ TOCEntry=collections.namedtuple('TOCEntry','file index ltrack sector num_bytes')
 ##########################################################################
 
 def build_cmd(files,options):
-    import zx02pack
-
     exec_data=get_exec_part(options)
 
     # Provided the *EXEC part is smaller than this, it will fit into
@@ -349,8 +350,8 @@ def main(argv):
     parser.add_argument('--intermediate-folder',metavar='PATH',dest='g_intermediate_folder_path',required=True,help='''put intermediate file(s) somewhere in %(metavar)s''')
     # I am too lazy to do the environment variable thing here. It
     # doesn't matter as it's easy to deal with from the Makefile.
-    parser.add_argument('--zx02pack-zx02',metavar='PATH',dest='g_zx02pack_zx02_path',required=True,help='''treat %(metavar)s as path to zx02 for zx02''')
-    parser.add_argument('--zx02pack-cache',metavar='PATH',dest='g_zx02pack_cache_path',required=True,help='''use %(metavar)s as zx02pack cache path''')
+    parser.add_argument('--zx02',metavar='PATH',dest='g_zx02_path',required=True,help='''treat %(metavar)s as path to zx02 binary''')
+    parser.add_argument('--zx02-cache',metavar='PATH',dest='g_zx02_cache_path',required=True,help='''use %(metavar)s as zx02 cache path''')
 
     subparsers=parser.add_subparsers()
 

@@ -498,4 +498,13 @@ initial: T=6.87; S=3906/s; D=29810/s
 
 tweaked: T=4.59; S=5846/s; D=44618/s
 
+* zx02 run
+
+#+begin_src python
+  argv=[zx02_path,
+        cache_uncompressed_path,
+        cache_compressed_path]
+  subprocess.run(argv,check=True)
+#+end_src
+
 * eof

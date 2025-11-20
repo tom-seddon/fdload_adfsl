@@ -60,10 +60,7 @@ else
 ZX02:=$(ZX02_PATH)/build/zx02
 endif
 
-# I just don't seem to be able to decide how I want this to work.
-export ZX02PACK_ZX02=$(ZX02)
-export ZX02PACK_CACHE=$(BUILD)/zx02_cache
-BUILDER_ZX02PACK_ARGS:=--zx02pack-zx02 "$(ZX02PACK_ZX02)" --zx02pack-cache "$(ZX02PACK_CACHE)"
+BUILDER_ZX02_ARGS:=--zx02 "$(ZX02)" --zx02-cache "$(BUILD)/zx02_cache"
 
 ##########################################################################
 ##########################################################################
@@ -71,7 +68,7 @@ BUILDER_ZX02PACK_ARGS:=--zx02pack-zx02 "$(ZX02PACK_ZX02)" --zx02pack-cache "$(ZX
 TEST_DISK_LIST_PY:=bin/test_disk_files.py
 TEST_DISK_INTERMEDIATES:=$(BUILD)/test_disk/intermediates
 TEST_DISK_CONTENTS:=$(BUILD)/test_disk/contents
-TEST_DISK_BUILDER_ARGS:=--list "$(TEST_DISK_LIST_PY)" --intermediate-folder "$(TEST_DISK_INTERMEDIATES)" $(BUILDER_ZX02PACK_ARGS)
+TEST_DISK_BUILDER_ARGS:=--list "$(TEST_DISK_LIST_PY)" --intermediate-folder "$(TEST_DISK_INTERMEDIATES)" $(BUILDER_ZX02_ARGS)
 TEST_DISK_BEEBLINK_PATH:=$(BEEBLINK_VOLUME)/Y
 
 ##########################################################################
@@ -120,14 +117,6 @@ $(BUILD)/GhoulsRevenge.bbc.dat : data/GhoulsRevenge.png
 
 $(BUILD)/TitleScreen_BBC.bbc.dat : data/TitleScreen_BBC.png
 	$(_V)$(PYTHON) "$(BEEB_BIN)/png2bbc.py" -o "$@" "$<" 2 --160
-
-##########################################################################
-##########################################################################
-
-# .PHONY:_pack_test_files
-# _pack_test_files: _ZX02_TEST_FILES:=$(wildcard $(ZX02_PATH)/tests/files/*)
-# _pack_test_files:
-# 	$(foreach INDEX,0 1 2 3 4 5 6 7 8 9,$(_V)$(PYTHON) "bin/zx02pack.py" "$(BEEBLINK_VOLUME)/1/$$.SCREEN$(INDEX)" "$(BEEB_BUILD)/Z.SCREEN$(INDEX)" $(newline))
 
 ##########################################################################
 ##########################################################################
