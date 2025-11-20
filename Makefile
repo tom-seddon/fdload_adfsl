@@ -17,9 +17,10 @@ endif
 ##########################################################################
 
 ifeq ($(UNAME),Darwin)
-GNU_MAKE:=gmake --no-print-directory
+# The GNU Make supplied with Xcode is old!
+RECENT_GNU_MAKE:=gmake --no-print-directory
 else
-GNU_MAKE:=$(MAKE)
+RECENT_GNU_MAKE:=$(MAKE)
 endif
 
 ##########################################################################
@@ -62,6 +63,8 @@ endif
 
 BUILDER_ZX02_ARGS:=--zx02 "$(ZX02)" --zx02-cache "$(BUILD)/zx02_cache"
 
+NPROC:=$(shell $(SHELLCMD) nproc)
+
 ##########################################################################
 ##########################################################################
 
@@ -86,7 +89,7 @@ endef
 build: _output_folders $(BUILD)/GhoulsRevenge.bbc.dat $(BUILD)/TitleScreen_BBC.bbc.dat
 # Build prerequisites.
 ifneq ($(UNAME),Windows_NT)
-	$(_V)test -f "$(ZX02)" || (cd "$(ZX02_PATH)" && $(GNU_MAKE) all)
+	$(_V)test -f "$(ZX02)" || (cd "$(ZX02_PATH)" && $(RECENT_GNU_MAKE) all)
 endif
 
 # Create the files list.
@@ -98,7 +101,11 @@ endif
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 
+# Warm up the ZX02 cache in parallel. 
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
+
 # Build the big file.
+
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg"
 #--output-beeblink "$(BEEB_FDLOAD_FILES)"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) beeblink "$(TEST_DISK_BEEBLINK_PATH)"
@@ -153,7 +160,7 @@ clean:
 	$(_V)$(SHELLCMD) rm-tree "$(BEEB_BUILD)"
 	$(_V)$(SHELLCMD) rm-tree "$(TEST_DISK_BEEBLINK_PATH)"
 ifneq ($(UNAME),Windows_NT)
-	$(_V)cd "$(ZX02_PATH)" && $(GNU_MAKE) clean
+	$(_V)cd "$(ZX02_PATH)" && $(RECENT_GNU_MAKE) clean
 # doesn't seem to do a proper clean?
 	$(_V)$(SHELLCMD) rm-tree "$(ZX02_PATH)/build"
 endif

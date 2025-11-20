@@ -28,6 +28,9 @@ def save_file(path,data):
 # ident = suffix for the identifier used to refer to this file in
 # the 6502 code.
 
+ZX02CacheEntry=collections.namedtuple('ZX02CacheEntry',
+                                      'u_data u_hash u_path c_folder c_path')
+
 # TODO: could/should this be a dataclass?
 class File:
     def __init__(self,path,ident,compressed=False):
@@ -57,24 +60,69 @@ class File:
         assert self._memory_data is not None
         return self._memory_data
 
+    def _get_zx02_cache_entry(self):
+        assert self.compressed
+        u_data=self.get_memory_data()
+        u_hash=hashlib.sha256(u_data).hexdigest()
+        c_folder=os.path.join(self._options.g_zx02_cache_path,u_hash[:3])
+        c_path=os.path.join(c_folder,'%s.zx02'%u_hash)
+        return ZX02CacheEntry(u_data=u_data,
+                              u_hash=u_hash,
+                              u_path=self.path,
+                              c_folder=c_folder,
+                              c_path=c_path)
+
     def get_disk_data(self):
         if self._disk_data is None:
             if self.compressed:
-                hash=hashlib.sha256(self.get_memory_data()).hexdigest()
-                c_folder=os.path.join(self._options.g_zx02_cache_path,
-                                      hash[:3])
-                c_path=os.path.join(c_folder,'%s.zx02'%hash)
-                if not os.path.isfile(c_path):
-                    makedirs(c_folder)
+                ent=self._get_zx02_cache_entry()
+                if not os.path.isfile(ent.c_path):
+                    makedirs(ent.c_folder)
                     argv=[self._options.g_zx02_path,
-                          self.path,
-                          c_path]
+                          ent.u_path,
+                          ent.c_path]
                     subprocess.run(argv,check=True)
-                self._disk_data=load_file(c_path)
+                self._disk_data=load_file(ent.c_path)
             else: self._disk_data=self.get_memory_data()
         assert self._disk_data is not None
         return self._disk_data
+    
+def warm_zx02_cache_cmd(files,options):
+    ent_by_hash={}
+    for file in files:
+        if file.compressed and os.path.isfile(file.path):
+            ent=file._get_zx02_cache_entry()
+            if not os.path.isfile(ent.c_path): ent_by_hash[ent.u_hash]=ent
 
+    if len(ent_by_hash)==0: return # no warming required.
+    
+    makefile_path=os.path.join(options.g_intermediate_folder_path,
+                               'zx02_cache_warmup_makefile.mak')
+    def target(ent): return 'f_%s'%ent.u_hash
+
+    all_targets=' '.join([target(ent) for ent in ent_by_hash.values()])
+    with open(makefile_path,'wt') as f:
+        f.write('.PHONY:all %s\n'%all_targets)
+        f.write('all: %s\n'%all_targets)
+        number=1
+        for hash,ent in ent_by_hash.items():
+            f.write('%s:\n'%target(ent))
+            f.write('\t@echo Compressing file: %d/%d\n'%(number,len(ent_by_hash)))
+
+            # qnd $ quoting for GNU Make purposes.
+            quoted_u_path=ent.u_path.replace('$','$$')
+            f.write('\t@"%s" "%s" "%s" > "%s"\n'%(options.g_zx02_path,
+                                               quoted_u_path,
+                                               ent.c_path,
+                                               '%s.txt'%ent.c_path))
+            makedirs(ent.c_folder)
+            number+=1
+
+    argv=[options.make_path,
+          '-j',str(os.cpu_count()),
+          '-f',makefile_path]
+    subprocess.run(argv,check=True)
+    
 ##########################################################################
 ##########################################################################
 
@@ -362,6 +410,9 @@ def main(argv):
 
     prepare_subparser=add_subparser('prepare',prepare_cmd,help='''find and compress files and generate a constants file with file indexes''')
     prepare_subparser.add_argument('--output-asm',metavar='FILE',dest='output_asm_path',help='''write output to %(metavar)s rather than stdout''')
+
+    warm_zx02_cache_subparser=add_subparser('warm-zx02-cache',warm_zx02_cache_cmd,help='''warm up zx02 cache as much as possible''')
+    warm_zx02_cache_subparser.add_argument('--make',metavar='PATH',dest='make_path',default='make',help='''use %(metavar)s as path to GNU Make. Default: %(default)s''')
 
     build_subparser=add_subparser('build',build_cmd,help='''generate big data file''')
     build_subparser.add_argument('--loader0',metavar='FILE',required=True,dest='loader0_path',help='''read loader0 code from %(metavar)s, a C64 .prg''')
