@@ -211,8 +211,8 @@ def build_cmd(files,options):
 
     toc=[]
     file_contents=[]
-    
-    lsector=32
+
+    assert len(fdload_data)==4096
     for file_index,file in enumerate(files):
         file_data=file.get_disk_data()
 
@@ -220,6 +220,9 @@ def build_cmd(files,options):
 
         check_budget(file_data,65536,file.path)
 
+        assert len(fdload_data)%256==0
+        lsector=16+len(fdload_data)//256
+        
         toc.append(TOCEntry(file=file,
                             index=file_index,
                             ltrack=lsector//16,
@@ -227,12 +230,9 @@ def build_cmd(files,options):
                             num_bytes=len(file_data)))
         #file_contents.append(file_data)
 
-        n=len(file_data)%256
-        if n!=0: file_data+=get_filler(256-n)
-        assert len(file_data)%256==0
-
         fdload_data+=file_data
-        lsector+=len(file_data)//256
+        n=len(fdload_data)%256
+        if n!=0: fdload_data+=get_filler(256-n)
 
     # assert len(toc)==len(file_contents)
     # for i in range(len(toc)): assert toc[i].num_bytes==len(file_contents[i])
