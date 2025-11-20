@@ -705,8 +705,9 @@ read_remainder_of_track:
 
 in_last_4KB:
                 cmp toc_entry.negative_size+1
+                beq +
                 bcs read_remainder_of_track
-
++
                 ; what's left on the track covers what's left of the
                 ; file, so read all of it.
                 lda toc_entry.negative_size+0
