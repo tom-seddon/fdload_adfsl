@@ -59,6 +59,29 @@ tube_ok:
                 .byte 0
 
 master_ok:
+                ldy $f4
+                
+                ldx #4
+check_sideways_ram_loop:
+                stx $f4
+                stx $fe30
+
+                lda $8008
+                eor #$ff
+                sta $8008
+                cmp $8008
+                php
+                eor #$ff
+                sta $8008
+                sty $f4
+                sty $fe30
+                plp
+                bne sideways_ram_unavailable
+
+                inx
+                cpx #8
+                bne check_sideways_ram_loop
+                
                 ; Try to load loader1 from disk.
                 ldx #<read_pblock
                 ldy #>read_pblock
@@ -115,6 +138,12 @@ read_succeeded:
 
                 ; Run the loader.
                 jmp loader1_base
+
+sideways_ram_unavailable:
+                brk
+                .byte 255
+                .text "Requires sideways RAM banks 4-7 enabled"
+                .byte 0
 
 unexpected_guid:
                 brk
