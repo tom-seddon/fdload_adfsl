@@ -1,5 +1,93 @@
 #+STARTUP: overview
 
+* General notes
+
+(somewhere probably better for this...)
+
+** Goals
+
+The idea is to produce an ADFS L disk, with 1 file on it, 653,568
+bytes, occupying every sector. This means that it has to start at head
+0 track 0 sector 7 (the first free sector on the disk) - there are no
+other options - and accessing the contents via the FDC directly would
+be easy.
+
+Call this file =!BOOT=, and make the boot option 3 (EXEC), and the BBC
+could actually boot it: have the file load some code somehow, then set
+it running, then do the close EXEC/SPOOL files OSBYTE. Just a question
+of some details, which boot_builder is intended to help look after.
+
+boot_builder does multiple things:
+
+1. handle the list of files that are to go on the disk
+2. compress any files that need compressing
+3. sort out loader0, the initial loader. (This needs encoding to
+   create a boot file pokes this into memory with a sequence of `!`
+   operator statements, then a `CALL` to set it going.) loader0's size
+   is limited and boot_builder will barf if it's too large
+4. sort out loader1, the secondary loader. This starts at ADFS sector
+   1280 (H0 T0 S0) and can occupy max 4096 bytes/1 track in total,
+   including the binary TOC that gets appended to it
+5. append the files from steps 1 and 2 to the disk in the proper order
+
+The assumption is that the disk will ultimately be read in track then
+head order, meaning (say) H0 T1 S15 is followed by H1 T1 S0 - then so
+on until H1 T1 S15, which will be followed by H0 T2 S0. (More
+heads'-worth of data per seek!)
+
+ADFS works differently, going trackwise first then headwise. The
+limited sizes of loader0 and loader1 are there to deal with this.
+
+H0 T0 is partly booked for unavoidable ADFS metadata: disk free space
+table (2 sectors), and root directory (5 sectors). The remaining 9
+sectors is available for loader0's encoded form.
+
+H1 T0 is booked for loader1. 
+
+H0 T1 is where the data for additional files starts. Total amount
+available is 2 heads * 79 tracks * 16 sectors * 256 bytes = 647,168
+bytes.
+
+** Build stages
+
+boot_builder runs in multiple stages to produce a given disk. For all
+stages, supply the same command line arguments:
+
+- =--list= :: the Python list file, a file with Python code in it that
+  specifies the files to include on the disk in the order they should
+  be included. **Must be idempotent** - it'll be re-evaluated for each
+  stage. Don't scrape the disk to get the file names or anything like
+  that...
+- =--intermediate-folder= :: folder to store intermediate stuff in:
+  boot file contents, info about the TOC, plus maybe other stuff
+- =--zx02pack-zx02= :: path to the zx02 binary
+- =--zx02pack-cache= :: path to the zx02pack cache, a folder/file
+  hierarchy indexed by SHA256 of the uncompressed data. This is used
+  to quickly retrieve (or, less quickly, produce on demand) the zx02
+  compressed form of any data
+
+Stages are as follows. Use =--help= for more info, and/or examine the
+makefile.
+
+- =prepare= :: create any required folders, and produce an asm include
+  file with constants for each file on the disk
+- =build= :: create the boot file. Provide paths to loader0 and
+  loader1 (as above), producing a boot file suitable for writing to an
+  ADFS L disk somehow
+- =beeblink= :: fill a BeebLink DFS-type folder with all the files
+  that went on the disk, for possible use with =FDLOAD5=
+
+** Test programs
+
+Not productized. Might not work if you're not me.
+
+- =:Z.$.FDLOAD= :: test version of the disk loader, assembled to run
+  from $2800, TOC appended, with some entry points at
+  the start
+- =FDLOAD5= :: load files from disk in turn, load corresponding file
+  from =boot_builder beeblink=, compare
+- =ZX0LOAD3= :: load specific compressed file from disk and unpack it
+
 * dir-locals
 
 #+begin_src elisp

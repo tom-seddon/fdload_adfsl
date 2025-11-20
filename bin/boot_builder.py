@@ -1,66 +1,15 @@
 #!/usr/bin/python3
-import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util
+import sys,os,argparse,collections,json,dataclasses,importlib,importlib.util,struct
 import zx02pack
-
-##########################################################################
-##########################################################################
-
-# To simplify the disk layout process, side 0 track 0 is reserved entirely
-# for data that's possibly going to be read by ADFS: the disk
-# metadata, and the *EXECable portion of the !BOOT file.
-#
-# There's 9 sectors free in this region, 2304 bytes. Given the !BOOT
-# encoding, a safe assumption for max initial loader code is 512
-# bytes. More could be available in practice, depending on contents
-# and load address.
-#
-# fdload content starts at side 1 track 0 sector 0.
-
-##########################################################################
-##########################################################################
-
-# 1. When running boot_builder.py, use --list to supply the Python
-# list file - a file with Python code in it that specifies the files
-# to include on the disk.
-#
-# 2. Use "boot_builder.py prepare" to compress any files that need
-# compressing (putting the result in the intermediate folder),
-# generate a .s65 with constants for the file indexes and sizes. This
-# gets included by any of the consuming code.
-#
-# 3. Use "boot_builder.py build" to build the actual big !BOOT file.
-# This takes paths to loader0 (C64 .PRG bootstrap program, poked into
-# RAM from BASIC then executed) and loader1 (C64 .PRG second loader
-# program, loaded from disk then executed). The binary TOC is appended
-# to loader1, which is assumed to the fdload code plus anything else
-# and start the actual thing running.
-#
-# The intermediate folder 
-#
-# Perhaps obviously, the file list should be the same for the
-# constants and build run in a particular build.
-#
-# (Max size for loader0 is 512 bytes; max size for loader1+TOC is 4
-# KB.)
-#
-# The big !BOOT file is 653,568 bytes, and will fit on an empty ADFS L
-# disk.
-
-# boot_builder.py can produce some additional output:
-#
-# . binary format TOC, for use by test code
-#
-# . JSON format TOC, vaguely human readable
-#
-# . BeebLink files, numbered, one per file on disk, for testing
-# purposes. plus $.COUNT, a 1-byte file containing 1 byte: the number
-# of files
 
 ##########################################################################
 ##########################################################################
 
 def load_file(path):
     with open(path,'rb') as f: return f.read()
+
+def save_file(path,data):
+    with open(path,'wb') as f: f.write(data)
 
 ##########################################################################
 ##########################################################################
@@ -382,12 +331,24 @@ def prepare_cmd(files,options):
 ##########################################################################
 ##########################################################################
 
+def beeblink_cmd(files,options):
+    makedirs(options.output_path)
+    for file_index,file in enumerate(files):
+        save_file(os.path.join(options.output_path,'$.%d'%file_index),
+                  file.get_disk_data())
+
+    save_file(os.path.join(options.output_path,'$.COUNT'),
+              struct.pack('<I',len(files)))
+
+##########################################################################
+##########################################################################
+
 def main(argv):
     parser=argparse.ArgumentParser()
     parser.add_argument('-l','--list',metavar='FILE',dest='g_list_py_path',required=True,help='''use Python script %(metavar)s to get files list''')
     parser.add_argument('--intermediate-folder',metavar='PATH',dest='g_intermediate_folder_path',required=True,help='''put intermediate file(s) somewhere in %(metavar)s''')
     # I am too lazy to do the environment variable thing here. It
-    # doesn't matter as it's easy to dael with from the Makefile.
+    # doesn't matter as it's easy to deal with from the Makefile.
     parser.add_argument('--zx02pack-zx02',metavar='PATH',dest='g_zx02pack_zx02_path',required=True,help='''treat %(metavar)s as path to zx02 for zx02''')
     parser.add_argument('--zx02pack-cache',metavar='PATH',dest='g_zx02pack_cache_path',required=True,help='''use %(metavar)s as zx02pack cache path''')
 
@@ -405,10 +366,9 @@ def main(argv):
     build_subparser.add_argument('--loader0',metavar='FILE',required=True,dest='loader0_path',help='''read loader0 code from %(metavar)s, a C64 .prg''')
     build_subparser.add_argument('--loader1',metavar='FILE',required=True,dest='loader1_path',help='''read loader1 code from %(metavar)s, a C64 .prg''')
     build_subparser.add_argument('--vdu21',action='store_true',help='''add a VDU21 in the *EXECable part''')
-    # build_subparser.add_argument('--output-data',metavar='FILE',dest='output_data_path',help='''write output to %(metavar)s''')
-    # build_subparser.add_argument('--output-toc-json',metavar='FILE',dest='output_toc_json_path',help='''write TOC JSON to %(metavar)s''')
-    # build_subparser.add_argument('--output-toc-binary',metavar='FILE',dest='output_toc_binary_path',help='''write TOC binary to %(metavar)s''')
-    # build_subparser.add_argument('--output-beeblink',metavar='PATH',dest='output_beeblink_path',help='''write numbered BeebLink-friendly files to %(metavar)s''')
+
+    beeblink_subparser=add_subparser('beeblink',beeblink_cmd,help='''generate BeebLink DFS-type drive with contents of disk''')
+    beeblink_subparser.add_argument('output_path',metavar='PATH',help='''write files to %(metavar)s''')
     
     options=parser.parse_args(argv)
     if options.fun is None:

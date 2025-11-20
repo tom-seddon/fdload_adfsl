@@ -72,7 +72,7 @@ TEST_DISK_LIST_PY:=bin/test_disk_files.py
 TEST_DISK_INTERMEDIATES:=$(BUILD)/test_disk/intermediates
 TEST_DISK_CONTENTS:=$(BUILD)/test_disk/contents
 TEST_DISK_BUILDER_ARGS:=--list "$(TEST_DISK_LIST_PY)" --intermediate-folder "$(TEST_DISK_INTERMEDIATES)" $(BUILDER_ZX02PACK_ARGS)
-TEST_DISK_BEEBLINK_DRIVE:=Y
+TEST_DISK_BEEBLINK_PATH:=$(BEEBLINK_VOLUME)/Y
 
 ##########################################################################
 ##########################################################################
@@ -104,6 +104,7 @@ endif
 # Build the big file.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg"
 #--output-beeblink "$(BEEB_FDLOAD_FILES)"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) beeblink "$(TEST_DISK_BEEBLINK_PATH)"
 
 # Assemble a version of the fdload code that's vaguely testable from
 # BASIC.
@@ -161,7 +162,7 @@ _adfs_image:
 clean:
 	$(_V)$(SHELLCMD) rm-tree "$(BUILD)"
 	$(_V)$(SHELLCMD) rm-tree "$(BEEB_BUILD)"
-	$(_V)$(SHELLCMD) rm-tree "$(BEEBLINK_VOLUME)/$(TEST_DISK_BEEBLINK_DRIVE)"
+	$(_V)$(SHELLCMD) rm-tree "$(TEST_DISK_BEEBLINK_PATH)"
 ifneq ($(UNAME),Windows_NT)
 	$(_V)cd "$(ZX02_PATH)" && $(GNU_MAKE) clean
 # doesn't seem to do a proper clean?
