@@ -83,14 +83,6 @@ PICS_DISK_BUILDER_ARGS:=--list "$(PICS_DISK_LIST_PY)" --intermediate-folder "$(P
 ##########################################################################
 ##########################################################################
 
-define newline
-
-
-endef
-
-##########################################################################
-##########################################################################
-
 .PHONY: build
 build: _output_folders $(BUILD)/GhoulsRevenge.bbc.dat $(BUILD)/TitleScreen_BBC.bbc.dat
 # Build prerequisites.
