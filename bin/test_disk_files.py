@@ -16,7 +16,7 @@ def make_files_list():
     # 3841 bytes. Occupies L2 S1-L3 S0 inclusive.
     files.append(boot_builder.File(path='data/n3841.dat',ident='n3841'))
 
-    for i in range(100):
+    for i in range(10):
         files.append(boot_builder.File(path=os.path.join(drive1,'''$.SCREEN%d'''%i),
                                        ident='screen%d'%i,
                                        compressed=True))

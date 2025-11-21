@@ -1,3 +1,5 @@
+                .include "../submodules/beeb/include/beeb.s65"
+
 ;-------------------------------------------------------------------------
 
 *=$70
@@ -25,10 +27,10 @@ toc_entries:
 
                 .section test_stuff
                 
-                jmp init        ; +0
-                jmp restore     ; +3
-                jmp seek        ; +6
-                jmp read        ; +9
+                jmp fdload.init        ; +0
+                jmp fdload.restore     ; +3
+                jmp fdload.seek        ; +6
+                jmp fdload.read        ; +9
                 lda #0          ; +12 (now redundant)
                 rts
                 jmp test_load_uncompressed_file   ; +15 $0f
@@ -48,7 +50,7 @@ test_load_uncompressed_file: .block
                 stx load_addr+0
                 sty load_addr+1
                 sta file_index
-                jsr load_uncompressed_file
+                jsr fdload.load_uncompressed_file
 load_addr:
                 .word $3000
 file_index: .byte 0
@@ -66,7 +68,7 @@ lda_byte: lda $ffff,x
                 sta args,x
                 dex
                 bpl loop
-                jsr load_compressed_file
+                jsr fdload.load_compressed_file
 args: .fill 4
                 sta $fffe
                 rts

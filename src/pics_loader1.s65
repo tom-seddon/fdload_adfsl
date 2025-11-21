@@ -1,0 +1,87 @@
+                .include "../submodules/beeb/include/beeb.s65"
+                .include "shared_constants.s65"
+
+*=$00
+                .dsection fdload_zp
+                .dsection fdload_other_zp
+                .dsection zx02_zp
+                .dsection zp
+                .cerror *>$90
+
+*=loader1_base
+                .dsection code
+                .dsection fdload_code
+                .dsection zx02_code
+zx02_workspace:
+                .dsection zx02_workspace
+toc_header: .dstruct TOCHeader
+toc_entries:
+                *=toc_header
+                .binary "../build/pics_disk/intermediates/toc.dat"
+                .cerror *>loader1_base+loader1_size-16
+*=loader1_base+loader1_size-16
+                .text loader1_guid
+
+;-------------------------------------------------------------------------
+
+                .section zp
+                .endsection
+
+;-------------------------------------------------------------------------
+
+                .section code
+                .block
+start:
+                ldx #0
+-
+                lda init_text,x
+                jsr oswrch
+                inx
+                cpx #size(init_text)
+                bne -
+
+                jsr fdload.init
+                jsr fdload.restore
+
+                lda acccon
+                and #~acccon.d  ; display main memory
+                ora #acccon.x   ; page in shadow memory
+                sta acccon
+
+loop:
+                jsr fdload.load_compressed_file
+                .word $3000
+                .byte $0e
+next_file_index:
+                .byte $00
+
+                lda #19
+                jsr osbyte
+
+                lda acccon
+                eor #acccon.d|acccon.x
+                sta acccon
+
+                lda next_file_index
+                inc a
+                cmp toc_header.num_files
+                bne +
+                lda #0
++
+                sta next_file_index
+                
+                jmp loop
+
+init_text: .block
+                .byte 22,129
+                .byte 22,1
+                .byte 23,1,0,0,0,0,0,0,0,0
+                .endblock
+
+                .endblock
+                .endsection code
+
+;-------------------------------------------------------------------------
+
+                .include "fdload.s65"
+                

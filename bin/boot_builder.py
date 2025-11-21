@@ -206,22 +206,20 @@ def get_exec_part(options):
 
     return result
 
-def get_filler(n): return n*b'\x00'
+# def get_filler(n): return n*b'\x00'
 
 def check_budget(data,max_size,description):
     
     if len(data)>max_size:
-        fatal('too large: %d bytes (max is %d; overrun by %d): %s',
-              description,
-              len(data),
-              len(data)-max_size)
+        fatal('too large: %d bytes (max is %d; overrun by %d): %s'%
+              (len(data),max_size,len(data)-max_size,description))
 
-def check_budget_and_pad(data,max_size,description):
-    assert isinstance(data,bytearray),type(data)
+# def check_budget_and_pad(data,max_size,description):
+#     assert isinstance(data,bytearray),type(data)
 
-    check_budget(data,max_size,description)
+#     check_budget(data,max_size,description)
 
-    data+=bytearray(max_size-len(data))
+#     data+=bytearray(max_size-len(data))
 
 ##########################################################################
 ##########################################################################
@@ -272,7 +270,7 @@ def build_fdload_data_cmd(files,options):
 
         fdload_data+=file_data
         n=len(fdload_data)%256
-        if n!=0: fdload_data+=get_filler(256-n)
+        if n!=0: fdload_data+=bytearray(256-n)
 
     check_budget(fdload_data,MAX_FDLOAD_DATA_SIZE,'fdload data')
 
@@ -373,26 +371,29 @@ def build_disk_contents_cmd(files,options):
     #
     # (The ADFS metadata is 7 sectors, so there's 9 sectors left in
     # track 0.)
-    check_budget_and_pad(exec_data,9*256,'loader8 in *EXEC form')
+    exec_data_size=9*256
+    check_budget(exec_data,exec_data_size,'loader8 in *EXEC form')
 
     # Load fdload data.
     fdload_data=load_file(get_fdload_data_path(options))
     check_budget(fdload_data,MAX_FDLOAD_DATA_SIZE,'fdload data')
     
     # Load loader1.
+    loader1_size=4096
     loader1=load_prg(options.loader1_path)
-    check_budget_and_pad(loader1.data,4096,'loader1 data')
+    check_budget(loader1.data,loader1_size,'loader1 data')
 
     # Arrange the data in ADFS sector order.
     output_data=bytearray()
     for side in range(2):
         for track in range(80):
             if track==0 and side==0:
-                # sort this area out later.
-                pass
+                output_data+=exec_data
+                output_data+=bytearray(exec_data_size-len(output_data))
             elif track==0 and side==1:
                 # this is where loader1 goes.
                 output_data+=loader1.data
+                output_data+=bytearray(loader1_size-len(loader1.data))
             else:
                 ltrack=(track-1)*2+side
                 assert ltrack>=0 and ltrack<159
@@ -401,12 +402,12 @@ def build_disk_contents_cmd(files,options):
                 j=len(output_data)
                 if i>len(fdload_data): output_data+=bytearray(4096)
                 else:
-                    output_data+=fdload_data[i:i+4096]
-                    output_data+=get_filler((4096-len(output_data)%4096)%4096)
+                    part=fdload_data[i:i+4096]
+                    output_data+=part
+                    output_data+=bytearray(4096-len(part))
 
-    # Prepend the *EXEC-friendly part.
-    output_data=exec_data+output_data
-    assert len(output_data)==(2*80*16-7)*256,len(output_data)
+    expected_output_data_size=(2*80*16-7)*256
+    assert len(output_data)==expected_output_data_size,(expected_output_data_size,len(output_data))
 
     makedirs(options.output_folder_path)
     save_file(os.path.join(options.output_folder_path,'!BOOT'),output_data)

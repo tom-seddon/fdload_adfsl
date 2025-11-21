@@ -1,5 +1,3 @@
-                .include "../submodules/beeb/include/beeb.s65"
-
 ; ;-------------------------------------------------------------------------
 
 ; ZP_BASE=$80
@@ -125,6 +123,7 @@ toc_entry: .dstruct TOCEntry
 
                 .section fdload_code
 
+fdload: .block
 
 ;-------------------------------------------------------------------------
 
@@ -644,6 +643,8 @@ in_last_4KB:
                 lda toc_entry.negative_size+1
                 sta read_byte_counter+1
                 rts
+
+                .endblock
 
                 .endblock
 

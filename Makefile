@@ -77,6 +77,14 @@ TEST_DISK_BEEBLINK_PATH:=$(BEEBLINK_VOLUME)/Y
 ##########################################################################
 ##########################################################################
 
+PICS_DISK_LIST_PY:=bin/pics_disk_files.py
+PICS_DISK_INTERMEDIATES:=$(BUILD)/pics_disk/intermediates
+PICS_DISK_CONTENTS:=$(BUILD)/pics_disk/contents
+PICS_DISK_BUILDER_ARGS:=--list "$(PICS_DISK_LIST_PY)" --intermediate-folder "$(PICS_DISK_INTERMEDIATES)" $(BUILDER_ZX02_ARGS)
+
+##########################################################################
+##########################################################################
+
 define newline
 
 
@@ -94,21 +102,24 @@ endif
 
 # Create the files list.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/test_disk_files.generated.s65"
-
-#	$(_V)$(MAKE) _pack_test_files
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/pics_disk_files.generated.s65"
 
 # Warm up the ZX02 cache in parallel. 
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 
 # Build the big file.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build-fdload-data
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) build-fdload-data
 
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
+	$(_V)$(MAKE) _asm PC=pics_loader1
 
 # Put together disk contents
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build-disk-contents --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" "$(TEST_DISK_CONTENTS)"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) build-disk-contents --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/pics_loader1.prg" $(PICS_DISK_CONTENTS)
 
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) beeblink "$(TEST_DISK_BEEBLINK_PATH)"
 
@@ -117,6 +128,7 @@ endif
 	$(_V)$(MAKE) _asm PC=fdload_test BEEB=FDLOAD
 
 	$(_V)$(MAKE) _adfs_image "BOOT=$(TEST_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(TEST_DISK_CONTENTS)" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
+	$(_V)$(MAKE) _adfs_image "BOOT=$(PICS_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(PICS_DISK_CONTENTS)" "PC_IMAGE=pics_disk.adl" "BBC_IMAGE=PICS"
 
 ##########################################################################
 ##########################################################################
@@ -174,14 +186,14 @@ _output_folders:
 .PHONY: _asm
 _asm:
 	$(_V)$(TASS) $(TASS_ARGS) $(TASS_EXTRA_ARGS) -L "$(BUILD)/$(PC).lst" -l "$(BUILD)/$(PC).symbols" -o "$(BUILD)/$(PC).prg" "src/$(PC).s65"
-	$(_V)$(PYTHON) "$(BEEB_BIN)/prg2bbc.py" $(PRG2BBC_EXTRA_ARGS) --io "$(BUILD)/$(PC).prg" "$(BEEB_BUILD)/$$.$(BEEB)"
+	$(if $(BEEB),$(_V)$(PYTHON) "$(BEEB_BIN)/prg2bbc.py" $(PRG2BBC_EXTRA_ARGS) --io "$(BUILD)/$(PC).prg" "$(BEEB_BUILD)/$$.$(BEEB)")
 
 ##########################################################################
 ##########################################################################
 
 .PHONY: _tom_emacs
 _tom_emacs: _CONFIG:=MOS 3.50r + BeebLink
-_tom_emacs: _DISK:=$(BUILD)/test_disk.adl
+_tom_emacs: _DISK:=$(BUILD)/pics_disk.adl
 _tom_emacs:
 	$(_V)$(MAKE) build
 #	curl --connect-timeout 0.25 --silent -G 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
