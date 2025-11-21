@@ -372,7 +372,7 @@ def build_disk_contents_cmd(files,options):
     # (The ADFS metadata is 7 sectors, so there's 9 sectors left in
     # track 0.)
     exec_data_size=9*256
-    check_budget(exec_data,exec_data_size,'loader8 in *EXEC form')
+    check_budget(exec_data,exec_data_size,'loader8 (*EXEC form)')
 
     # Load fdload data.
     fdload_data=load_file(get_fdload_data_path(options))
@@ -382,6 +382,12 @@ def build_disk_contents_cmd(files,options):
     loader1_size=4096
     loader1=load_prg(options.loader1_path)
     check_budget(loader1.data,loader1_size,'loader1 data')
+
+    print('{}: loader0={:,}/{:,} ({:,}); loader1={:,}/{:,} ({:,}); fdload={:,}/{:,} ({:,})'.format(
+        os.path.splitext(os.path.basename(options.g_list_py_path))[0],
+        len(exec_data),exec_data_size,exec_data_size-len(exec_data),
+        len(loader1.data),loader1_size,loader1_size-len(loader1.data),
+        len(fdload_data),MAX_FDLOAD_DATA_SIZE,MAX_FDLOAD_DATA_SIZE-len(fdload_data)))
 
     # Arrange the data in ADFS sector order.
     output_data=bytearray()
