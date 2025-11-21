@@ -82,7 +82,7 @@ sta_fdload_byte: sta fdload_dest,y
                 sta acccon
 
 loop:
-                jsr fdload.load_compressed_file
+                jsr fdload.load_file_contents
                 .word $3000
                 .byte $0e
 next_file_index:

@@ -316,19 +316,19 @@ stack_buf: .fill 12             ; hopefully sufficient
 
 entry_points: .block
                 .logical fdload_entry_points_base
-load_compressed_file:
-                jmp load_compressed_file_routine
-load_uncompressed_file:
-                jmp load_uncompressed_file_routine
+load_file_contents:
+                jmp load_file_contents_routine
+load_file_disk_data:
+                jmp load_file_disk_data_routine
                 .endlogical
                 .endblock
 
                 .endsection fdload_init_code
 
-load_compressed_file=entry_points.load_compressed_file
-                .cerror load_compressed_file!=fdload_entry_points_base+0*3
-load_uncompressed_file=entry_points.load_uncompressed_file
-                .cerror load_uncompressed_file!=fdload_entry_points_base+1*3
+load_file_contents=entry_points.load_file_contents
+                .cerror load_file_contents!=fdload_entry_points_base+0*3
+load_file_disk_data=entry_points.load_file_disk_data
+                .cerror load_file_disk_data!=fdload_entry_points_base+1*3
                 
 ;-------------------------------------------------------------------------
 
@@ -525,7 +525,7 @@ lda_byte: lda $ffff
 ;
 ; .byte file_index - index of file
 
-load_uncompressed_file_routine: .block
+load_file_disk_data_routine: .block
                 tsx
 ;got_s:
                 ; get dest address
@@ -556,18 +556,22 @@ done:
 ;
 ; .word dest_address - where to uncompress the data to
 ;
-; .byte buffer_msb - MSB of page-aligned 4 KB buffer to read each bit of file into
+; .byte buffer_msb - MSB of page-aligned 4 KB buffer to read each bit of file into in the compressed case
 ;
 ; .byte file_index - index of file
                 
-load_compressed_file_routine: .block
+load_file_contents_routine: .block
                 tsx
-;got_s:
-                ; get dest address
+                
+                ; get dest address. Set up dest addresses for both
+                ; compressend and uncompressed cases, as it's shorter
+                ; than trying to fix that up later.
                 jsr fetch_caller_arg
                 sta ZX0_dst+0
+                sta read_byte_addr+0
                 jsr fetch_caller_arg
                 sta ZX0_dst+1
+                sta read_byte_addr+1
 
                 ; get buffer address MSB
                 jsr fetch_caller_arg
@@ -583,6 +587,10 @@ load_compressed_file_routine: .block
                 jsr file_read_init
                 pla             ; restore buffer address MSB
                 bcs done        ; taken if invalid file
+
+                ; check for compressed file. 
+                bit toc_entry.sector_and_flags
+                bpl load_file_disk_data_routine.loop
 
                 ; indicate resumable operation
                 ldx #$80
