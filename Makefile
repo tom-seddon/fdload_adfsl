@@ -183,6 +183,7 @@ _asm:
 
 .PHONY: _tom_emacs
 _tom_emacs: _CONFIG:=MOS 3.50r + BeebLink
+_tom_emacs: _DISK:=$(BUILD)/test_disk.adl
 _tom_emacs: _DISK:=$(BUILD)/pics_disk.adl
 _tom_emacs:
 	$(_V)$(MAKE) build

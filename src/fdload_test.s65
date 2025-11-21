@@ -5,21 +5,15 @@
 *=$70
 fdload_zp:
                 .dsection fdload_zp
-                .dsection fdload_other_zp
-                .dsection zx02_zp
                 .cerror *>$90
 
 ;-------------------------------------------------------------------------
 
 *=$2800
                 .dsection test_stuff
-                .dsection fdload_code
-                .dsection zx02_code
-zx02_workspace:
-                .dsection zx02_workspace
-toc_header: .dstruct TOCHeader
-toc_entries:
-*=toc_header
+                .dsection fdload_init_code
+                .dsection fdload_working_code
+fdload_toc:
                 .binary "../build/test_disk/intermediates/toc.dat"
                 .cerror *>$3000
 
@@ -36,12 +30,12 @@ toc_entries:
                 jmp test_load_uncompressed_file   ; +15 $0f
                 lda #fdload_zp    ; +18
                 rts
-                lda #ZX0_src   ; +21 $15
+                lda #fdload.ZX0_src   ; +21 $15
                 rts
-                lda #ZX0_dst   ; +24 $18
+                lda #fdload.ZX0_dst   ; +24 $18
                 rts
                 jmp test_full_decomp ; +27 $1b
-                jmp full_decomp      ; +30 $1e
+                jmp fdload.full_decomp      ; +30 $1e
                 jmp get_zx02_workspace ; +33 $21
                 jmp test_load_compressed_file ; +36 $24
 
@@ -75,12 +69,12 @@ args: .fill 4
                 .endblock
 
 test_full_decomp:
-                lsr ZX0_resume_state
-                jmp full_decomp
+                lsr fdload.ZX0_resume_state
+                jmp fdload.full_decomp
 
 get_zx02_workspace:
-                ldx #<zx02_workspace
-                ldy #>zx02_workspace
+                ldx #<fdload.zx02_workspace
+                ldy #>fdload.zx02_workspace
                 rts
                 
                 .endsection

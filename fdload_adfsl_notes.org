@@ -4,6 +4,9 @@
 
 (somewhere probably better for this...)
 
+Disk location syntax is =Hh Tt Ss= - where =h= is the head/side (0/1),
+=t= the track (0-79) and =s= the sector (0-15).
+
 ** Goals
 
 The idea is to produce an ADFS L disk, with 1 file on it, 653,568
@@ -15,28 +18,33 @@ be easy.
 Call this file =!BOOT=, and make the boot option 3 (EXEC), and the BBC
 could actually boot it: have the file load some code somehow, then set
 it running, then do the close EXEC/SPOOL files OSBYTE. Just a question
-of some details, which boot_builder is intended to help look after.
+of some details.
 
-boot_builder does multiple things:
+** =boot_builder=
+
+boot_builder looks after the details. 
 
 1. handle the list of files that are to go on the disk
 2. compress any files that need compressing
-3. sort out loader0, the initial loader. (This needs encoding to
-   create a boot file pokes this into memory with a sequence of `!`
-   operator statements, then a `CALL` to set it going.) loader0's size
-   is limited and boot_builder will barf if it's too large
-4. sort out loader1, the secondary loader. This starts at ADFS sector
-   1280 (H1 T0 S0) and can occupy max 4096 bytes/1 track in total,
-   including the binary TOC that gets appended to it
-5. append the files from steps 1 and 2 to the disk in the proper order
+3. sort out loader0, the initial loader: create a *EXECable !BOOT file
+   that pokes it into memory with a sequence of =!= operator
+   statements, then does a =CALL= to set it going.
+
+   The =!= syntax is not very space efficient, so loader0's size is
+   limited to 512 bytes.
+4. sort out loader1, the secondary loader: this goes on the disk
+   as-is, but at a specific position so that loader0 can load it.
+
+   loader1's size is max 4096 bytes/1 track.
+5. arrange the files from steps 1 and 2 in the =!BOOT= file as required
 
 The assumption is that the disk will ultimately be read in track then
 head order, meaning (say) H0 T1 S15 is followed by H1 T1 S0 - then so
 on until H1 T1 S15, which will be followed by H0 T2 S0. (More
-heads'-worth of data per seek!)
+heads'-worth of data per seek!) So the =!BOOT= file is arranged with
+that in mind.
 
-ADFS works differently, going trackwise first then headwise. The
-limited sizes of loader0 and loader1 are there to deal with this.
+** Eventual disk layout
 
 H0 T0 is partly booked for unavoidable ADFS metadata: disk free space
 table (2 sectors), and root directory (5 sectors). The remaining 9
@@ -47,6 +55,18 @@ H1 T0 is booked for loader1.
 H0 T1 is where the data for additional files starts. Total amount
 available is 2 heads * 79 tracks * 16 sectors * 256 bytes = 647,168
 bytes.
+
+The ADFS disk layout is head then track, so (say) H0 T0 S15 is
+followed by H0 T1 S0, and so on - then H0 T79 S15 is followed by H1 T0
+S0. The only bit of data that's sensible readable by ADFS is the *EXEC prefix.
+
+** loaders
+
+loader0 is intended to be fairly generic. It ensures no Tube, Master
+128 hardware, accessible sideways RAM, doing a BRK if required. Then
+loads loader1 from its known place on disk.
+
+loader1 can do anything required.
 
 ** Build stages
 
@@ -60,22 +80,151 @@ stages, supply the same command line arguments:
   that...
 - =--intermediate-folder= :: folder to store intermediate stuff in:
   boot file contents, info about the TOC, plus maybe other stuff
-- =--zx02pack-zx02= :: path to the zx02 binary
-- =--zx02pack-cache= :: path to the zx02pack cache, a folder/file
-  hierarchy indexed by SHA256 of the uncompressed data. This is used
-  to quickly retrieve (or, less quickly, produce on demand) the zx02
-  compressed form of any data
+- =--zx02= :: path to the zx02 binary
+- =--zx02-cache= :: path to the zx02 cache, a folder/file hierarchy
+  indexed by SHA256 of the uncompressed data. This is used to quickly
+  retrieve (or, less quickly, produce on demand) the zx02 compressed
+  form of any data
 
 Stages are as follows. Use =--help= for more info, and/or examine the
 makefile.
 
 - =prepare= :: create any required folders, and produce an asm include
   file with constants for each file on the disk
-- =build= :: create the boot file. Provide paths to loader0 and
-  loader1 (as above), producing a boot file suitable for writing to an
-  ADFS L disk somehow
-- =beeblink= :: fill a BeebLink DFS-type folder with all the files
-  that went on the disk, for possible use with =FDLOAD5=
+- =warm-zx02-cache= :: warm up the zx02 cache by compressing any files
+  that can be found on disk that don't have cached compressed
+  versions. The build will work without the warmup step - files will
+  be compressed on demand - but the warmup step will do any
+  compression in parallel to take advantage of multi-core CPUs
+- =build-fdload-data= :: assemble the disk data and generate the TOC
+- =build-disk-contents= :: create a folder containing the final !BOOT
+  file and a .inf file for it, suitable for use with [[https://github.com/tom-seddon/beeb/tree/master/bin#adf_create][=adf_create.py=]]
+- =beeblink= :: fill a BeebLink DFS-style folder with all the files
+  that went on disk, for possible test purposes
+
+** Expected process
+
+The Makefile is intended to go roughly like this:
+
+1. =boot_builder prepare= to generate the files list
+2. generate data files or whatever
+3. assemble individual bits of whatever you're doing. Include the
+   files list file from step 1 to get the file indexes
+4. =boot_builder warm-zx02-cache= to compress anything that needs
+   doing
+5. =boot_builder build-fdload-data= to build the disk data and
+   generate the TOC
+6. assemble loader0
+7. assemble loader1, which will very likely incbin the TOC data from
+   step 5
+8. =boot_builder build-disk-contents=, supplying assembled loader0 and
+   loader1
+
+** fdload
+
+Include in project's loader1. loader1 will have to do some stuff to
+put the fdload code somewhere useful.
+
+*** =.dsection fdload_zp=
+
+This is where fdload's ZP stuff will go.
+
+*** =.dsection fdload_init_code=
+
+This is where fdload's init code will go: the =fdload.init= routine,
+and the NMI routine bits that get copied to page 13.
+
+*** =.dsection fdload_working_code=
+
+This is where fdload's working code will go.
+
+*** =fdload_banked_version=, =fdload_working_code=, =fdload_select_bank=, =fdload_restore_bank=
+
+By default, the fdload working code runs in place.
+
+Set =fdload_banked_version= to have fdload copy the working code to
+main memory on each call to =fdload.init=.
+
+=fdload_working_code= is the address to which =fdload.init= should
+copy the working code. 
+
+=fdload_select_bank= selects the banked region that fdload is stored
+in, giving access to the fdload_init_code region. Store the previous
+state - probably just ACCCON and ROMSEL - in X/Y on exit. Preserve A.
+
+=fdload_restore_bank= restores the banked region selected by
+=fdload_select_bank=. X/Y are the values from on exit from
+=fdload_select_bank=. Preserve A and C.
+
+TODO: this naming sucks.
+
+*** =fdload_toc=
+
+This must be the start address of the incbin'd TOC data.
+
+*** Call =fdload.one_time_init=
+
+This needs doing once on startup to ensure the drive is at track 0 and
+the FDC state is consistent. (Shouldn't take long to run, as the ADFS
+boot process should hopefully mean the drive is at track 0 already.)
+
+This calls =fdload.init=, so the entry points are available once it's
+called.
+
+** Entry points
+
+To prepare fdload for use, do whatever bank selection needs doing then
+call =fdload.init=. Exact steps will be project-specific as it'll
+depend on what loader1 does.
+
+Entry points must be entered with =jsr=. Follow each entry point with
+the arguments as bytes. For example, to load file 3's on-disk data to
+$3000:
+
+#+begin_src 6502-asm
+                  jsr $d83        ; entry point
+                  .word $3000     ; address to load to
+                  .byte 3         ; file index
+                  
+                  nop             ; execution will resume here
+#+end_src
+
+(The routine will arrange for them to be skipped over when returning.)
+
+Once done with the disk, the fdload regions can be overwritten.
+
+*** $d80 - load file contents
+
+Load file's contents into memory. If compressed, it will be
+uncompressed.
+
+| Arg | Size | What                        |
+|-----+------+-----------------------------|
+|  +0 | w    | address to load data to     |
+|  +2 | b    | MSB of decompression buffer |
+|  +3 | b    | file's index                |
+
+The decompression buffer is 4 KB (4096 bytes) (16 pages). These 16
+pages have to be contiguous. In theory the buffer can overlap the
+uncompressed data, as per zx02 docs.
+
+The loading doesn't alter the paging settings. The right regions must
+be paged in for compression buffer and destination address to make
+sense.
+
+*** $d83 - load file's on-disk data
+
+Load file's on-disk data into memory.
+
+| Arg | Size | What                    |
+|-----+------+-------------------------|
+|  +0 | w    | address to load data to |
+|  +2 | b    | file's index            |
+
+The file is read straight to the load address.
+
+The loading doesn't alter the paging settings. The right regions must
+be paged in for the address to make sense.
 
 ** Test programs
 

@@ -8,16 +8,16 @@
                 .weak
 fdload_debug=false
 fdload_verbose=false
+
+                ; if true, build the ROM banked version, designed to
+                ; live in a ROM bank at $bc00 with the TOC at $b800.
+fdload_banked_version=false
                 .endweak
 
-;                 .if test_build
-;                 .weak
-; verbose=false
-;                 .endweak
-;                 .else
-; verbose=false
-;                 .endif
+;-------------------------------------------------------------------------
 
+fdload_entry_points_base=$d80
+                
 ;-------------------------------------------------------------------------
 
 ; BIT_immediate=$89
@@ -104,6 +104,17 @@ type_i_flags=h_flag_value|%101
 
 ; ; 0xx = no 30 ms settling delay
 ; type_ii_flags=h_flag_value|%000
+
+;-------------------------------------------------------------------------
+
+fdload: .block
+
+                .logical fdload_toc
+                .virtual
+toc_header: .dstruct TOCHeader
+toc_entries:
+                .endvirtual
+                .endlogical
                 
 ;-------------------------------------------------------------------------
 
@@ -112,19 +123,219 @@ type_i_flags=h_flag_value|%101
 command_status: .fill 1
 read_byte_addr: .fill 2
 read_byte_counter: .fill 2
+toc_entry: .dstruct TOCEntry
+offset: .fill 2
+bitr: .fill 1
+ZX0_dst: .fill 2
+ZX0_src: .fill 2
+pntr: .fill 2
                 .endsection
 
-                .section fdload_other_zp
-argptr: .fill 2
-toc_entry: .dstruct TOCEntry
-                .endsection
+;-------------------------------------------------------------------------
+
+                .section fdload_init_code
+
+; fdload code that can go in a banked section. it doesn't need to be
+; paged in while the transfer is ongoing.
+
+;-------------------------------------------------------------------------
+
+one_time_init: .block
+                jsr init
+                jmp restore
+                .endblock
+                
+init: .block
+                .if fdload_banked_version
+
+working_code_size=working_code_end-working_code_begin
+                .cerror working_code_size>512
+
+                ldx #0
+copy_fdload_working_code_loop:
+                lda fdload_working_code,x
+                sta working_code_begin,x
+                .if working_code_size>256
+                ; this will overwrite some bytes with the same value.
+                ; oh well.
+                lda fdload_working_code+working_code_size-256,x
+                sta working_code_begin+working_code_size-256,x
+                .endif
+                inx
+                bne copy_fdload_working_code_loop
+                
+                .endif
+
+                ; this just assumes there is no 1770 command ongoing!
+                
+                ldx #size(nmi_routine)-1
+copy_nmi_routine_loop:
+                lda nmi_routine_code,x
+                sta $d01,x
+                dex
+                bpl copy_nmi_routine_loop
+
+                ldx #size(entry_points)-1
+copy_entry_points_loop:
+                lda entry_points,x
+                sta fdload_entry_points_base,x
+                dex
+                bpl copy_entry_points_loop
+
+                jsr nmi_routine.cancel
+                stz command_status
+
+                rts
+                .endblock
+
+;-------------------------------------------------------------------------
+;
+; Initialise file read.
+;
+; (The actual entry point is file_read_init - either an alias for this
+; label, or a routine that handles paging in the fdload init area.)
+;
+; Entry:
+; 
+; A = file index
+;
+; Exit:
+;
+; toc_entry - initialised
+;
+; Preserves: Y
+                
+file_read_init_2: .block
+                ; don't read bogus TOC data! The drive can only go as
+                ; far as track 79...
+                cmp toc_header.num_files
+                bcs done
+
+                ; form toc address.
+                asl a           ; BCDEFGH0 A
+                rol a           ; CDEFGH0A B
+                rol a           ; DEFGH0AB C
+                tax
+                ror a           ; CDEFGH0A
+                and #%11111100  ; CDEFGH00
+                clc
+                adc #<toc_entries
+                sta lda_toc_entry_byte+1
+                txa
+                and #%00000011  ; 000000AB
+                adc #>toc_entries
+                ; C=0
+                sta lda_toc_entry_byte+2
+
+                ldx #size(TOCEntry)-1
+-
+lda_toc_entry_byte: lda $ffff,x
+                sta toc_entry,x
+                dex
+                bpl -
+done:
+                rts
+                .endblock
                 
 ;-------------------------------------------------------------------------
 
-                .section fdload_code
+nmi_routine_code:
+                .logical $d01
+nmi_routine: .block
+                .byte complete_command-(*+1) ; operand for BRA
+                
+                sta relda+1
 
-fdload: .block
+                lda fdc.data
+                sta (read_byte_addr)
+                inc read_byte_counter+0
+                bne got_read_byte_counter
+                inc read_byte_counter+1
+                bne got_read_byte_counter
+cancel_command:
+                ; Read done.
+                jsr cancel
+                lsr command_status
+got_read_byte_counter:
+                inc read_byte_addr+0
+                bne got_read_byte_addr
+                inc read_byte_addr+1
+got_read_byte_addr:
+nmi_done:
+relda: lda #$ff
+                rti
 
+; X=opcode to poke into first byte of NMI routine
+; C=0 to select side 0; C=1 to select side 2
+prepare_fdc_and_nmi_routine_for_command: .block
+                lda #fdc_control.drive0|fdc_control.not_reset
+                bcc +
+                ora #fdc_control.side2
++
+                sta fdc_control
+                .cerror *!=prepare_nmi_routine_for_command
+                .endblock
+; X=opcode to poke into first byte of NMI routine
+prepare_nmi_routine_for_command: .block
+                stx $d00
+
+                ; indicate thing is busy.
+                sec
+                ror command_status
+                rts
+                .endblock
+                
+cancel:
+                lda #RTI_implicit
+                sta $d00
+                lda #%11010000  ; Type IV Force Interrupt
+                sta fdc.command
+; Cycles = 2+2N+3(N-1)+2 = 2+2N+3N-3+2 = 2+5N-3+2 = 2+5N+1 = 3+5N
+                lda #13
+-
+                dec a
+                bne -
+                rts
+
+complete_command:
+                lsr command_status
+                rti
+                .endblock
+
+                .virtual
+zx02_workspace:
+ZX0_resume_state: .fill 1
+ZX0_src_buf_end_page: .fill 1
+stack_buf_size: .fill 1
+entry_s: .fill 1
+stack_buf: .fill 12             ; hopefully sufficient
+                .endvirtual
+                
+                .cerror *>fdload_entry_points_base
+                .endlogical
+
+entry_points: .block
+                .logical fdload_entry_points_base
+load_compressed_file:
+                jmp load_compressed_file_routine
+load_uncompressed_file:
+                jmp load_uncompressed_file_routine
+                .endlogical
+                .endblock
+
+                .endsection fdload_init_code
+
+load_compressed_file=entry_points.load_compressed_file
+                .cerror load_compressed_file!=fdload_entry_points_base+0*3
+load_uncompressed_file=entry_points.load_uncompressed_file
+                .cerror load_uncompressed_file!=fdload_entry_points_base+1*3
+                
+;-------------------------------------------------------------------------
+
+                .section fdload_working_code
+
+working_code_begin:
+                
 ;-------------------------------------------------------------------------
 
                 .if fdload_verbose
@@ -159,46 +370,29 @@ print_nybble:
                 cld
                 jmp oswrch
                 .endif
-                
-;-------------------------------------------------------------------------
-
-init: .block
-                jsr cancel
-
-                ldx #size(nmi_routine)-1
-copy_nmi_routine_loop:
-                lda nmi_routine,x
-                sta $d01,x
-                dex
-                bpl copy_nmi_routine_loop
-
-                stz command_status
-
-                rts
-                .endblock
 
 ;-------------------------------------------------------------------------
 
-cancel: .block
-                lda #RTI_implicit
-                sta $d00
-                lda #%11010000  ; Type IV Force Interrupt
-                sta fdc.command
-                .cerror *!=wait_32us
-                .endblock
+; cancel: .block
+;                 lda #RTI_implicit
+;                 sta $d00
+;                 lda #%11010000  ; Type IV Force Interrupt
+;                 sta fdc.command
+;                 .cerror *!=wait_32us
+;                 .endblock
 
-; The jsr/rts overhead isn't included in the delay, so the routine can
-; be fallen through into in at least one case.
+; ; The jsr/rts overhead isn't included in the delay, so the routine can
+; ; be fallen through into in at least one case.
 
-; Cycles = 2+2N+3(N-1)+2 = 2+2N+3N-3+2 = 2+5N-3+2 = 2+5N+1 = 3+5N
+; ; Cycles = 2+2N+3(N-1)+2 = 2+2N+3N-3+2 = 2+5N-3+2 = 2+5N+1 = 3+5N
                 
-wait_32us: .block
-                lda #13
--
-                dec a
-                bne -
-                rts
-                .endblock
+; wait_32us: .block
+;                 lda #13
+; -
+;                 dec a
+;                 bne -
+;                 rts
+;                 .endblock
 
 ;-------------------------------------------------------------------------
 
@@ -211,7 +405,7 @@ restore: .block
 ; Y=Type I command to perform
 perform_seek_type_command: .block
                 ldx #BRA_relative
-                jsr prepare_fdc_and_nmi_routine_for_command
+                jsr nmi_routine.prepare_fdc_and_nmi_routine_for_command
                 sty fdc.command
                 .cerror *!=wait_for_command
                 .endblock
@@ -289,7 +483,7 @@ read: .block
                 ; don't update the FDC control reg. The restore/seek
                 ; will have set it to the right value.
                 ldx #BIT_immediate
-                jsr prepare_nmi_routine_for_command
+                jsr nmi_routine.prepare_nmi_routine_for_command
 
                 ; xxx1xxxx = read multiple sectors
                 lda #%10010000|h_flag_value ; Type II Read Sector
@@ -304,60 +498,6 @@ read: .block
                 bra wait_for_command
                 .endblock
                 
-;-------------------------------------------------------------------------
-
-; X=opcode to poke into nmi_routine.branch
-; C=0 to select side 0; C=1 to select side 2
-prepare_fdc_and_nmi_routine_for_command: .block
-                lda #fdc_control.drive0|fdc_control.not_reset
-                bcc +
-                ora #fdc_control.side2
-+
-                sta fdc_control
-                .cerror *!=prepare_nmi_routine_for_command
-                .endblock
-prepare_nmi_routine_for_command: .block
-                stx $d00
-
-                ; indicate thing is busy.
-                sec
-                ror command_status
-                rts
-                .endblock
-
-;-------------------------------------------------------------------------
-
-nmi_routine: .block
-                .logical $d01
-                .byte complete_command-(*+1) ; operand for BRA
-                
-                sta relda+1
-
-                lda fdc.data
-                sta (read_byte_addr)
-                inc read_byte_counter+0
-                bne got_read_byte_counter
-                inc read_byte_counter+1
-                bne got_read_byte_counter
-cancel_command:
-                ; Read done.
-                jsr cancel
-                lsr command_status
-got_read_byte_counter:
-                inc read_byte_addr+0
-                bne got_read_byte_addr
-                inc read_byte_addr+1
-got_read_byte_addr:
-nmi_done:
-relda: lda #$ff
-                rti
-
-complete_command:
-                lsr command_status
-                rti
-                .endlogical
-                .endblock
-
 ;-------------------------------------------------------------------------
 ;
 ; Preserves: Y
@@ -385,9 +525,9 @@ lda_byte: lda $ffff
 ;
 ; .byte file_index - index of file
 
-load_uncompressed_file: .block
+load_uncompressed_file_routine: .block
                 tsx
-                
+;got_s:
                 ; get dest address
                 jsr fetch_caller_arg
                 sta read_byte_addr+0
@@ -420,9 +560,9 @@ done:
 ;
 ; .byte file_index - index of file
                 
-load_compressed_file: .block
+load_compressed_file_routine: .block
                 tsx
-
+;got_s:
                 ; get dest address
                 jsr fetch_caller_arg
                 sta ZX0_dst+0
@@ -499,53 +639,31 @@ loop:
 done:
                 rts
                 .endblock
-                
+
 ;-------------------------------------------------------------------------
 ;
-; Initialise file read.
-;
-; Entry:
-; 
-; A = file index
-;
-; Exit:
-;
-; toc_entry - initialised
-;
-; Preserves: Y
-                
-file_read_init: .block
-                ; don't read bogus TOC data! The drive can only go as
-                ; far as track 79...
-                cmp toc_header.num_files
-                bcs done
 
-                ; form toc address.
-                asl a           ; BCDEFGH0 A
-                rol a           ; CDEFGH0A B
-                rol a           ; DEFGH0AB C
-                tax
-                ror a           ; CDEFGH0A
-                and #%11111100  ; CDEFGH00
-                clc
-                adc #<toc_entries
-                sta lda_toc_entry_byte+1
-                txa
-                and #%00000011  ; 000000AB
-                adc #>toc_entries
-                ; C=0
-                sta lda_toc_entry_byte+2
+                .if fdload_banked_version
 
-                ldx #size(TOCEntry)-1
--
-lda_toc_entry_byte: lda $ffff,x
-                sta toc_entry,x
-                dex
-                bpl -
+file_read_init:
+                jsr fdload_select_bank
+                phx
+                phy
 
-done:
+                jsr file_read_init_2
+
+                ply
+                plx
+                jsr fdload_restore_bank
+
                 rts
-                .endblock
+
+                .else
+
+file_read_init=file_read_init_2
+
+                .endif
+
                 
 ;-------------------------------------------------------------------------
 ;
@@ -645,32 +763,6 @@ in_last_4KB:
                 rts
 
                 .endblock
-
-                .endblock
-
-                .endsection
-
-;-------------------------------------------------------------------------
-
-                .section zx02_zp
-offset: .fill 2
-bitr: .fill 1
-ZX0_dst: .fill 2
-ZX0_src: .fill 2
-pntr: .fill 2
-                .endsection
-
-                .section zx02_workspace
-
-ZX0_resume_state: .fill 1
-ZX0_src_buf_end_page: .fill 1
-stack_buf_size: .fill 1
-entry_s: .fill 1
-stack_buf: .fill 12             ; hopefully sufficient
-                
-                .endsection
-                
-                .section zx02_code
 
 ;--------------------------------------------------
 ;
@@ -891,8 +983,11 @@ carry:
                 asl bitr
                 rts
                 .endblock
-                
                 .endblock
-                .endsection
+
+working_code_end:
+                .endsection fdload_working_code
+
+                .endblock
 
                 

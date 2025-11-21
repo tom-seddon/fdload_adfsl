@@ -3,21 +3,31 @@
 
 *=$00
                 .dsection fdload_zp
-                .dsection fdload_other_zp
                 .dsection zx02_zp
                 .dsection zp
                 .cerror *>$90
 
+fdload_banked_version=true
+fdload_rom_bank=7
+                
 *=loader1_base
                 .dsection code
-                .dsection fdload_code
-                .dsection zx02_code
-zx02_workspace:
-                .dsection zx02_workspace
-toc_header: .dstruct TOCHeader
-toc_entries:
-                *=toc_header
+fdload_begin:
+                .logical $b800
+fdload_dest:
+fdload_toc:
                 .binary "../build/pics_disk/intermediates/toc.dat"
+                .dsection fdload_init_code
+fdload_working_code:
+                .logical $900
+                .dsection fdload_working_code
+                .endlogical
+                .cerror *>$bffd
+*=$bffd
+                jsr fdload.init
+                .endlogical
+fdload_code_end:
+                
                 .cerror *>loader1_base+loader1_size-16
 *=loader1_base+loader1_size-16
                 .text loader1_guid
@@ -33,15 +43,38 @@ toc_entries:
                 .block
 start:
                 ldx #0
--
+print_init_text_loop:
                 lda init_text,x
                 jsr oswrch
                 inx
                 cpx #size(init_text)
-                bne -
+                bne print_init_text_loop
 
-                jsr fdload.init
-                jsr fdload.restore
+                ; copy fdload code into ROM
+                jsr fdload_select_bank
+                ldx #$08        ; 8 pages = 2 KB
+                ldy #0
+copy_fdload_loop:
+lda_fdload_byte: lda fdload_begin,y
+sta_fdload_byte: sta fdload_dest,y
+
+                ; get rid of the original fdload code
+                lda #0
+                sta fdload_begin,y
+                
+                iny
+                bne copy_fdload_loop
+                inc lda_fdload_byte+2
+                inc sta_fdload_byte+2
+                dex
+                bne copy_fdload_loop
+
+                jsr fdload.one_time_init
+
+                ; select some other ROM bank...
+                lda #4
+                sta $f4
+                sta romsel
 
                 lda acccon
                 and #~acccon.d  ; display main memory
@@ -64,7 +97,7 @@ next_file_index:
 
                 lda next_file_index
                 inc a
-                cmp toc_header.num_files
+                cmp fdload.toc_header.num_files
                 bne +
                 lda #0
 +
@@ -79,6 +112,19 @@ init_text: .block
                 .endblock
 
                 .endblock
+
+fdload_select_bank:
+                ldy romsel
+                ldx #fdload_rom_bank
+                stx $f4
+                stx romsel
+                rts
+
+fdload_restore_bank:
+                sty $f4
+                sty romsel
+                rts
+                
                 .endsection code
 
 ;-------------------------------------------------------------------------
