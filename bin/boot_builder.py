@@ -56,7 +56,9 @@ class File:
 
     def get_memory_data(self):
         if self._memory_data is None:
-            self._memory_data=load_file(self._path)
+            try: self._memory_data=load_file(self._path)
+            except FileNotFoundError:
+                fatal('not found (because not built?): %s'%self._path)
         assert self._memory_data is not None
         return self._memory_data
 
