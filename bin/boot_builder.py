@@ -199,7 +199,7 @@ def get_exec_part(options):
     result+=b'*BASIC\r'
     if options.vdu21:
         result+=b'V.12,23,1;0;0;0;0,21\r'
-        result+=b'V.6:P."LOADING...";:V.21\r'
+        result+=b'V.6:P."Loading...";:V.21\r'
     for line_index,line in enumerate(lines):
         result+=line.encode('ascii')
         # no harm in having the VDU6 always there
