@@ -42,6 +42,7 @@ start:
                 cpx #0
                 beq tube_ok
 
+                jsr mode7
                 brk
                 .byte 255
                 .text "Not compatible with 6502 second processor"
@@ -53,6 +54,7 @@ tube_ok:
                 and #%11000000
                 beq master_ok
 
+                jsr mode7
                 brk
                 .byte 255
                 .text "Requires Master 128/Master Compact"
@@ -105,6 +107,7 @@ check_sideways_ram_loop:
                 lda xdigits,x
                 sta adfs_error_code+1
                 
+                jsr mode7
                 brk
                 .byte 255
                 .text "ADFS read error: &"
@@ -146,16 +149,27 @@ read_succeeded:
                 jmp loader1_base
 
 sideways_ram_unavailable:
+                jsr mode7
                 brk
                 .byte 255
                 .text "Requires sideways RAM banks 4-7 enabled"
                 .byte 0
 
 unexpected_guid:
+                jsr mode7
                 brk
                 .byte 255
                 .text "Unexpected loader contents"
                 .byte 0
+
+mode7:
+                ; Even if already in mode 7 (or other readable mode),
+                ; the cursor is disabled and it'd be nice to have it
+                ; back.
+                lda #22
+                jsr oswrch
+                lda #7
+                jmp oswrch
                 
 xdigits: .text "0123456789ABCDEF"
                 
