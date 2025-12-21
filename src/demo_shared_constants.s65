@@ -4,6 +4,7 @@ resident_base=$290
 fdload_init=resident_base+0
 fdload_select_bank=resident_base+2
 fdload_restore_bank=resident_base+4
+null_irq_addr=resident_base+6
 
 ;-------------------------------------------------------------------------
 
@@ -11,3 +12,18 @@ fdload_load_file_contents=$d80
 fdload_load_file_disk_data=$d83
 
 ;-------------------------------------------------------------------------
+
+reserved_zp_begin=$e0
+
+;-------------------------------------------------------------------------
+
+; TODO: this is a bit of annoying boilerplate... but it is probably
+; going to end up useful having a centralized table of all the
+; addresses.
+demo_scroller0_begin=$8000
+demo_scroller0_end=$c000
+
+;-------------------------------------------------------------------------
+
+                .include "../build/demo_disk_files.generated.s65"
+                

@@ -4,12 +4,12 @@
 
 *=$00
                 .dsection zp
-                .cerror *>$d0
+                .cerror *>reserved_zp_begin
 
-*=$d0
+*=reserved_zp_begin
                 .dsection fdload_zp
                 .dsection zx02_zp
-                .cerror *>$f0
+                .cerror *>$fc
 
 ;-------------------------------------------------------------------------
 
@@ -55,10 +55,31 @@ resident_end:
 start:
                 php
                 sei
+
+                ; the null IRQ handler is always available via jmp
+                ; (irq2v).
+                
                 lda #<null_irq
                 sta irq1v+0
+                sta irq2v+0
                 lda #>null_irq
                 sta irq1v+1
+                sta irq2v+1
+                lda #<null_brk
+                sta brkv+0
+                lda #>null_brk
+                sta brkv+1
+
+                ; disable all VIA IRQs
+                lda #$7f
+                sta user_via.ier
+                sta system_via.ier
+
+                ; (If no IRQs enabled, the MOS treats the reset as a
+                ; power-on reset, and clears all of RAM - including
+                ; sideways RAM in MOS 3.50. Not actually a problem in
+                ; this case.)
+                
                 plp
 
                 ldx #resident_end-resident_begin-1
@@ -90,8 +111,16 @@ sta_fdload_byte: sta fdload_dest,y
                 ; fdload_select_bank setting remains in effect.
                 jsr fdload.one_time_init
 
-halt:
-                jmp halt        ; TODO, of course...
+                lda #4
+                sta romsel
+                
+                jsr fdload_load_file_contents
+                .word demo_scroller0_begin
+                .byte $60
+                .byte file_scroller0_bin
+
+                jmp demo_scroller0_begin
+                
                 .endblock
                 
                 .endsection code
@@ -104,6 +133,8 @@ halt:
                 .cerror *!=fdload_select_bank
                 bra fdload_select_bank_2
                 .cerror *!=fdload_restore_bank
+                bra fdload_restore_bank_2
+fdload_restore_bank_2:
                 sty romsel
                 rts
 fdload_select_bank_2:
@@ -120,8 +151,21 @@ fdload_init_2:
                 ply
                 bra fdload_restore_bank
 null_irq:
+                lda system_via.ifr
+                bpl +
+                sta system_via.ifr
++
+                lda user_via.ifr
+                bpl +
+                sta user_via.ifr
++
                 lda $fc
                 rti
+null_brk
+                sei
+                ; TODO: flash the keyboard LEDs or something, so it's
+                ; clearer what's happened?
+                bra null_brk
                 .endsection resident
 
 ;-------------------------------------------------------------------------

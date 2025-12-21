@@ -1,0 +1,65 @@
+                .include "../submodules/beeb/include/beeb.s65"
+                .include "demo_shared_constants.s65"
+
+;-------------------------------------------------------------------------
+
+mode2_palette_entry: .function _logical,_physical
+                .cerror !((_logical)>=0&&(_logical)<16)
+                .cerror !((_physical)>=0&&(_physical)<16)
+                .endfunction ((_logical)<<4)|((_physical)^7)
+                
+;-------------------------------------------------------------------------
+
+*=$00
+                .dsection zp
+                .cerror *>reserved_zp_begin
+                
+;-------------------------------------------------------------------------
+
+*=demo_scroller0_begin
+                .dsection code
+                .cerror *>demo_scroller0_end
+
+;-------------------------------------------------------------------------
+
+                .section zp
+                .endsection zp
+
+;-------------------------------------------------------------------------
+
+                .section code
+start:
+                ldx #13
+init_crtc_loop:
+                stx $fe00
+                lda mode5_crtc,x
+                sta $fe01
+                dex
+                bpl init_crtc_loop
+
+                ldx #15
+init_palette_loop:
+                lda mode2_palette,x
+                sta video_ula_palette
+                dex
+                bpl init_palette_loop
+
+                stz video_ula_control ; Mode 8
+
+halt:
+                jmp halt
+
+mode5_crtc:
+                ;     R0  R1  R2  R3  R4  R5  R6  R7
+                .byte $3f,$28,$31,$24,$26,$00,$20,$22
+                ;     R8  R9  R10 R11
+                .byte $00,$07,$67,$08
+                .byte >($300>>8) ; R12
+                .byte <($300>>8) ; R13
+
+mode2_palette:
+                .for _i:=0,_i<16,_i+=1
+                .byte mode2_palette_entry(_i,_i&7)
+                .endfor
+                
+                .endsection code

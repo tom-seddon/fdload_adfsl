@@ -205,9 +205,9 @@ uncompressed.
 |  +2 | b    | MSB of decompression buffer |
 |  +3 | b    | file's index                |
 
-The decompression buffer is 4 KB (4096 bytes) (16 pages). These 16
-pages have to be contiguous. In theory the buffer can overlap the
-uncompressed data, as per zx02 docs.
+The decompression buffer is 4 KB (4096 bytes) ($1000 bytes) (16
+pages). These 16 pages have to be contiguous. In theory the buffer can
+overlap the uncompressed data, as per zx02 docs.
 
 The loading doesn't alter the paging settings. The right regions must
 be paged in for compression buffer and destination address to make
@@ -661,24 +661,24 @@ tweaked: T=4.59; S=5846/s; D=44618/s
 
 Zero page:
 
-| Region | What     |
-|--------+----------|
-| $0x    |          |
-| $1x    |          |
-| $2x    |          |
-| $3x    |          |
-| $4x    |          |
-| $5x    |          |
-| $6x    |          |
-| $7x    |          |
-| $8x    |          |
-| $9x    |          |
-| $Ax    |          |
-| $Bx    |          |
-| $Cx    |          |
-| $Dx    | fdload   |
-| $Ex    | fdload   |
-| $Fx    | Acorn OS |
+| Region | What            |
+|--------+-----------------|
+| $0x    |                 |
+| $1x    |                 |
+| $2x    |                 |
+| $3x    |                 |
+| $4x    |                 |
+| $5x    |                 |
+| $6x    |                 |
+| $7x    |                 |
+| $8x    |                 |
+| $9x    |                 |
+| $Ax    |                 |
+| $Bx    |                 |
+| $Cx    |                 |
+| $Dx    |                 |
+| $Ex    | fdload          |
+| $Fx    | fdload/Acorn OS |
 
 Wider main memory use:
 
@@ -701,7 +701,7 @@ Wider main memory use:
 | $0Exx... |                   |
 
 fdload memory is only used while loading stuff from disk and free
-otherwise. So while effects are running, all of $00...$ef is free, and
+otherwise. So while effects are running, all of zero page is free, and
 everything from $300 upwards.
 
 This gives space for 100*320 byte character rows, starting from $300.
@@ -716,13 +716,13 @@ rows.
 ** Acorn OS
 
 In zero page, only $FC is actually reserved. The MOS interrupt
-preamble always overwrites it.
+preamble always overwrites it. fdload fits itself in around this.
 
 For page 2: the MOS interrupt preamble jumps through IRQ1V, so that's
 fixed.
 
 Keeping BRKV free is worthwhile as it'd be nice to have a useful BRK
-routine.
+routine (or at least one that doesn't cause a crash).
 
 It'd be good to have the =*FX200,3= flag at $0258 retained, so that
 memory is wiped if pressing BREAK during the demo. Try to avoid

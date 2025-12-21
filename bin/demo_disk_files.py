@@ -9,4 +9,7 @@ import boot_builder,os.path
 def make_files_list():
     files=[]
 
+    files.append(boot_builder.File(path='build/demo_scroller0.bin',
+                                   ident='scroller0_bin'))
+
     return files

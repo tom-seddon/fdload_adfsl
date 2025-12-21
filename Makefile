@@ -103,6 +103,9 @@ endif
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/pics_disk_files.generated.s65"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/demo_disk_files.generated.s65"
 
+# Build any part files.
+	$(_V)$(MAKE) _asm PC=demo_scroller0 EXTRACT_PRG=1
+
 # Warm up the ZX02 cache in parallel. 
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
@@ -191,6 +194,7 @@ _output_folders:
 .PHONY: _asm
 _asm:
 	$(_V)$(TASS) $(TASS_ARGS) $(TASS_EXTRA_ARGS) -L "$(BUILD)/$(PC).lst" -l "$(BUILD)/$(PC).symbols" -o "$(BUILD)/$(PC).prg" "src/$(PC).s65"
+	$(if $(EXTRACT_PRG),$(_V)$(PYTHON) "$(BEEB_BIN)/prg2bbc.py" $(PRG2BBC_EXTRA_ARGS) --io "$(BUILD)/$(PC).prg" "$(BUILD)/$(PC).bin")
 	$(if $(BEEB),$(_V)$(PYTHON) "$(BEEB_BIN)/prg2bbc.py" $(PRG2BBC_EXTRA_ARGS) --io "$(BUILD)/$(PC).prg" "$(BEEB_BUILD)/$$.$(BEEB)")
 
 ##########################################################################
