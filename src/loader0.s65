@@ -126,6 +126,12 @@ read_succeeded:
                 ; Enter ROM filing system.
                 lda #$8d        ; OSBYTE select ROM filing system
                 jsr osbyte
+
+                ; Do a *FX200,3 to ensure RAM is cleared out on BREAK.
+                lda #200        ; OSBYTE Read/write ESCAPE, BREAK effect
+                ldx #3          ; ESCAPE disabled; clear memory on BREAK
+                ldy #0
+                jsr osbyte
                 
                 ; claim the NMI.
                 lda #$8f        ; OSBYTE issue paged ROM service request
