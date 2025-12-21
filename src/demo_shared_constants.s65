@@ -1,0 +1,13 @@
+;-------------------------------------------------------------------------
+
+resident_base=$290
+fdload_init=resident_base+0
+fdload_select_bank=resident_base+2
+fdload_restore_bank=resident_base+4
+
+;-------------------------------------------------------------------------
+
+fdload_load_file_contents=$d80
+fdload_load_file_disk_data=$d83
+
+;-------------------------------------------------------------------------

@@ -1,0 +1,134 @@
+                .include "../submodules/beeb/include/beeb.s65"
+                .include "shared_constants.s65"
+                .include "demo_shared_constants.s65"
+
+*=$00
+                .dsection zp
+                .cerror *>$d0
+
+*=$d0
+                .dsection fdload_zp
+                .dsection zx02_zp
+                .cerror *>$f0
+
+;-------------------------------------------------------------------------
+
+fdload_banked_version=true
+fdload_rom_bank=7
+
+*=loader1_base
+                .dsection code
+fdload_begin:
+                .logical $b800
+fdload_dest:
+fdload_toc:
+                .binary "../build/demo_disk/intermediates/toc.dat"
+                .dsection fdload_init_code
+fdload_working_code:
+                .logical $300
+                .dsection fdload_working_code
+                .endlogical
+                .cerror $>$bffd
+*=$bffd
+                jsr fdload.init
+                .endlogical
+fdload_code_end:
+resident_begin:
+                .logical resident_base
+                .dsection resident
+                .cerror *>$300
+                .endlogical
+resident_end:
+                .cerror *>loader1_base+loader1_size-16
+*=loader1_base+loader1_size-16
+                .text loader1_guid
+
+;-------------------------------------------------------------------------
+
+                .section zp
+                .endsection
+
+;-------------------------------------------------------------------------
+
+                .section code
+                .block
+start:
+                php
+                sei
+                lda #<null_irq
+                sta irq1v+0
+                lda #>null_irq
+                sta irq1v+1
+                plp
+
+                ldx #resident_end-resident_begin-1
+copy_resident_loop:
+                lda resident_begin,x
+                sta resident_base,x
+                dex
+                bpl copy_resident_loop
+
+                jsr fdload_select_bank
+                
+                ldx #8          ; 2 KB
+                ldy #0
+copy_fdload_loop:
+lda_fdload_byte: lda fdload_begin,y
+sta_fdload_byte: sta fdload_dest,y
+
+                lda #0
+                sta fdload_begin,y
+
+                iny
+                bne copy_fdload_loop
+
+                inc lda_fdload_byte+2
+                inc sta_fdload_byte+2
+                dex
+                bne copy_fdload_loop
+
+                ; fdload_select_bank setting remains in effect.
+                jsr fdload.one_time_init
+
+halt:
+                jmp halt        ; TODO, of course...
+                .endblock
+                
+                .endsection code
+
+;-------------------------------------------------------------------------
+
+                .section resident
+                .cerror *!=fdload_init
+                bra fdload_init_2
+                .cerror *!=fdload_select_bank
+                bra fdload_select_bank_2
+                .cerror *!=fdload_restore_bank
+                sty romsel
+                rts
+fdload_select_bank_2:
+                ldy romsel
+                ldx #fdload_rom_bank
+                stx romsel
+                rts
+fdload_init_2:
+                jsr fdload_select_bank_2
+                phy
+                lda #fdload_rom_bank
+                sta romsel
+                jsr fdload.init
+                ply
+                bra fdload_restore_bank
+null_irq:
+                lda $fc
+                rti
+                .endsection resident
+
+;-------------------------------------------------------------------------
+
+                .include "fdload.s65"
+
+                .cerror fdload.load_file_contents!=fdload_load_file_contents
+                .cerror fdload.load_file_disk_data!=fdload_load_file_disk_data
+
+;-------------------------------------------------------------------------

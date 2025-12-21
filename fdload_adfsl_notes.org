@@ -58,7 +58,8 @@ bytes.
 
 The ADFS disk layout is head then track, so (say) H0 T0 S15 is
 followed by H0 T1 S0, and so on - then H0 T79 S15 is followed by H1 T0
-S0. The only bit of data that's sensible readable by ADFS is the *EXEC prefix.
+S0. The only bit of data that's sensible readable by ADFS is the *EXEC
+prefix.
 
 ** loaders
 
@@ -655,5 +656,82 @@ tweaked: T=4.59; S=5846/s; D=44618/s
         cache_compressed_path]
   subprocess.run(argv,check=True)
 #+end_src
+
+* demo memory map
+
+Zero page:
+
+| Region | What     |
+|--------+----------|
+| $0x    |          |
+| $1x    |          |
+| $2x    |          |
+| $3x    |          |
+| $4x    |          |
+| $5x    |          |
+| $6x    |          |
+| $7x    |          |
+| $8x    |          |
+| $9x    |          |
+| $Ax    |          |
+| $Bx    |          |
+| $Cx    |          |
+| $Dx    | fdload   |
+| $Ex    | fdload   |
+| $Fx    | Acorn OS |
+
+Wider main memory use:
+
+| Region   | What              |
+|----------+-------------------|
+| $00xx    | Zero page         |
+| $01xx    | Stack             |
+| $02xx    | Acorn OS/reserved |
+| $03xx    | fdload            |
+| $04xx    | fdload            |
+| $05xx    |                   |
+| $06xx    |                   |
+| $07xx    |                   |
+| $08xx    |                   |
+| $09xx    |                   |
+| $0Axx    |                   |
+| $0Bxx    |                   |
+| $0Cxx    |                   |
+| $0Dxx    | fdload            |
+| $0Exx... |                   |
+
+fdload memory is only used while loading stuff from disk and free
+otherwise. So while effects are running, all of $00...$ef is free, and
+everything from $300 upwards.
+
+This gives space for 100*320 byte character rows, starting from $300.
+
+(101*320 byte rows would start at a problematic $01c0.)
+
+Shadow RAM, HAZEL and ANDY are always free. 102*320 byte character
+rows.
+
+(Equivalent 640 byte row counts 
+
+** Acorn OS
+
+In zero page, only $FC is actually reserved. The MOS interrupt
+preamble always overwrites it.
+
+For page 2: the MOS interrupt preamble jumps through IRQ1V, so that's
+fixed.
+
+Keeping BRKV free is worthwhile as it'd be nice to have a useful BRK
+routine.
+
+It'd be good to have the =*FX200,3= flag at $0258 retained, so that
+memory is wiped if pressing BREAK during the demo. Try to avoid
+leaving too much of a mess behind.
+
+$0290 and upwards is effectively free. 
+
+There'll probably be an fdload_init entry point in page 2 somewhere,
+that selects the fdload bank, copies the code to main RAM, and
+restores old ROMSEL. Not too many bytes.
 
 * eof

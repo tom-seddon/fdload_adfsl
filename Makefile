@@ -83,6 +83,14 @@ PICS_DISK_BUILDER_ARGS:=--list "$(PICS_DISK_LIST_PY)" --intermediate-folder "$(P
 ##########################################################################
 ##########################################################################
 
+DEMO_DISK_LIST_PY:=bin/demo_disk_files.py
+DEMO_DISK_INTERMEDIATES:=$(BUILD)/demo_disk/intermediates
+DEMO_DISK_CONTENTS:=$(BUILD)/demo_disk/contents
+DEMO_DISK_BUILDER_ARGS:=--list "$(DEMO_DISK_LIST_PY)" --intermediate-folder "$(DEMO_DISK_INTERMEDIATES)" $(BUILDER_ZX02_ARGS)
+
+##########################################################################
+##########################################################################
+
 .PHONY: build
 build: _output_folders $(BUILD)/GhoulsRevenge.bbc.dat $(BUILD)/TitleScreen_BBC.bbc.dat
 # Build prerequisites.
@@ -93,24 +101,30 @@ endif
 # Create the files list.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/test_disk_files.generated.s65"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/pics_disk_files.generated.s65"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/demo_disk_files.generated.s65"
 
 # Warm up the ZX02 cache in parallel. 
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 
 # Build the big file.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build-fdload-data
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) build-fdload-data
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) build-fdload-data
 
 # Assemble stuff
 	$(_V)$(MAKE) _asm PC=loader0 BEEB=LOADER0
 	$(_V)$(MAKE) _asm PC=loader1 BEEB=LOADER1
 	$(_V)$(MAKE) _asm PC=pics_loader1
+	$(_V)$(MAKE) _asm PC=demo_loader1
 
 # Put together disk contents
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) build-disk-contents --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/loader1.prg" "$(TEST_DISK_CONTENTS)"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) build-disk-contents --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/pics_loader1.prg" $(PICS_DISK_CONTENTS)
+	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) build-disk-contents --vdu21 --loader0 "$(BUILD)/loader0.prg" --loader1 "$(BUILD)/demo_loader1.prg" $(DEMO_DISK_CONTENTS)
 
+# Create BeebLink folders.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) beeblink "$(TEST_DISK_BEEBLINK_PATH)"
 
 # Assemble a version of the fdload code that's vaguely testable from
@@ -119,6 +133,7 @@ endif
 
 	$(_V)$(MAKE) _adfs_image "BOOT=$(TEST_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(TEST_DISK_CONTENTS)" "PC_IMAGE=test_disk.adl" "BBC_IMAGE=TEST"
 	$(_V)$(MAKE) _adfs_image "BOOT=$(PICS_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(PICS_DISK_CONTENTS)" "PC_IMAGE=pics_disk.adl" "BBC_IMAGE=PICS"
+	$(_V)$(MAKE) _adfs_image "BOOT=$(DEMO_DISK_INTERMEDIATES)/boot.dat" "DISK_CONTENTS=$(DEMO_DISK_CONTENTS)" "PC_IMAGE=demo_disk.adl" "BBC_IMAGE=DEMO"
 
 ##########################################################################
 ##########################################################################
@@ -183,12 +198,19 @@ _asm:
 
 .PHONY: _tom_emacs
 _tom_emacs: _CONFIG:=MOS 3.50r + BeebLink
+_tom_emacs: _CONFIG:=Master 128 (MOS 3.50)
 _tom_emacs: _DISK:=$(BUILD)/test_disk.adl
 _tom_emacs: _DISK:=$(BUILD)/pics_disk.adl
+_tom_emacs: _DISK:=$(BUILD)/demo_disk.adl
 _tom_emacs:
 	$(_V)$(MAKE) build
-#	curl --connect-timeout 0.25 --silent -G 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
-	curl --connect-timeout 0.25 --silent -H 'Content-Type:application/binary' --upload-file '$(_DISK)' 'http://localhost:48075/mount/b2?drive=0&name=$(_DISK)'
+	curl --fail-with-body --connect-timeout 0.25 --silent 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
+	curl --fail-with-body --connect-timeout 0.25 --silent -H 'Content-Type:application/binary' --upload-file '$(_DISK)' 'http://localhost:48075/mount/b2?drive=0&name=$(_DISK)'
+# (the pasting interferes with the FS boot key, so it ends up in ROM
+# or tape filing system or whatever. But: it doesn't matter, because
+# it selects *ADFS manually.)
+	$(_V)$(SHELLCMD) echo-bytes -o "$(BUILD)/paste.dat" -e _ "*ADFS_0d*EXEC !BOOT_0d"
+	curl --fail-with-body --connect-timeout 0.25 --silent -H 'Content-Type:text/plain;charset:utf-8' --upload-file "$(BUILD)/paste.dat" "http://localhost:48075/paste/b2"
 
 ##########################################################################
 ##########################################################################
