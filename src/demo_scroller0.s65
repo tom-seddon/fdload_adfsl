@@ -23,8 +23,110 @@ mode2_palette_entry: .function _logical,_physical
 ;-------------------------------------------------------------------------
 
                 .section zp
+                ;
+left_crtc_addr: .fill 2
+irq_region: .fill 1
+left_addr: .fill 2
+left_addr_row2: .fill 2
+right_addr: .fill 2
+vsync_counter: .fill 1
+crtc_left_addr_msb: .fill 1
+text_ptr: .fill 2
+char_ptr: .fill 2
+column_mask: .fill 1
+column_mask_counter: .fill 1
+y_offset: .fill 1
+nops_tmp: .fill 1
                 .endsection zp
 
+;-------------------------------------------------------------------------
+
+nops: .macro ncycles
+n:=\ncycles
+
+                .cerror n==1,"can't delay for just 1 cycle"
+
+                .if n%2==1
+                sta nops_tmp
+n:=n-3
+                .endif
+
+                .if n>=131072
+                jsr cycles_wait_131072
+n:=n-131072
+                .endif
+
+                .if n>=65536
+                jsr cycles_wait_65536
+n:=n-65536
+                .endif
+
+                .if n>=32768
+                jsr cycles_wait_32768
+n:=n-32768
+                .endif
+
+                .if n>=16384
+                jsr cycles_wait_16384
+n:=n-16384
+                .endif
+
+                .if n>=8192
+                jsr cycles_wait_8192
+n:=n-8192
+                .endif
+
+                .if n>=4096
+                jsr cycles_wait_4096
+n:=n-4096
+                .endif
+
+                .if n>=2048
+                jsr cycles_wait_2048
+n:=n-2048
+                .endif
+
+                .if n>=1024
+                jsr cycles_wait_1024
+n:=n-1024
+                .endif
+
+                .if n>=512
+                jsr cycles_wait_512
+n:=n-512
+                .endif
+
+                .if n>=256
+                jsr cycles_wait_256
+n:=n-256
+                .endif
+
+                .if n>=128
+                jsr cycles_wait_128
+n:=n-128
+                .endif
+                
+                .rept n/12
+                jsr cycles_wait_12
+n:=n-12
+                .next
+
+                .rept n/2
+                nop
+                .next
+                
+                .endm
+                
+;-------------------------------------------------------------------------
+
+initial_t1_value=40*64-128
+t1_value_1_row=1*8*64-2
+num_visible_rows=4
+vsync_row=34
+total_num_rows=39
+t1_value_8_rows=(total_num_rows-(num_visible_rows-1))*8*64-2
+                .cerror t1_value_8_rows>=65536
+                
 ;-------------------------------------------------------------------------
 
                 .section code
@@ -36,7 +138,7 @@ init_crtc_loop:
                 sta $fe01
                 dex
                 bpl init_crtc_loop
-
+                
                 ldx #15
 init_palette_loop:
                 lda mode2_palette,x
@@ -46,20 +148,208 @@ init_palette_loop:
 
                 stz video_ula_control ; Mode 8
 
+                ldx #0
+init_zp_loop:
+                stz 0,x
+                inx
+                cpx #reserved_zp_begin
+                bne init_zp_loop
+
+                ldx #0
+clear_memory_loop:
+;                 and #7
+;                 cmp #7
+;                 beq indicator
+;                 lda store_clear_memory+2
+;                 bra store_clear_memory
+; indicator:
+;                 lda #$ff
+store_clear_memory: stz $300,x
+                inx
+                bne clear_memory_loop
+                inc store_clear_memory+2
+                bpl clear_memory_loop
+
+                lda romsel
+                ldx #<handle_irq
+                ldy #>handle_irq
+                jsr irq_set_thunked_handler
+
+                ; lda #$80|VIAIRQ.t1
+                ; sta system_via.ier
+
+                ; start address=$0300
+                lda #$60
+                sta left_crtc_addr+0
+                lda #$00
+                sta left_crtc_addr+1
+
+;-------------------------------------------------------------------------
+
+                ; set T1 continuous, T2 one-shot
+                lda #%01000000
+                sta system_via.acr
+
+                ; Vertical displayed=1
+                lda #6
+                sta $fe00
+                lda #1
+                sta $fe01
+                
+                ; Reactivate display.
+                lda #8
+                sta $fe00
+                stz $fe01
+
+                ; wait for vsync at scanline 274 or so.
+                lda #VIAIRQ.ca1
+                sta system_via.ifr
+wait_for_vsync_loop:
+                bit system_via.ifr
+                beq wait_for_vsync_loop
+
+                sta $ffff
+
+                ; request IRQ at some point in row 0.
+                lda #<initial_t1_value
+                sta system_via.t1l_l
+                lda #>initial_t1_value
+                sta system_via.t1c_h
+
+                lda #$80|VIAIRQ.t1
+                sta system_via.ier
+
+                ; Don't include the adjustment thereafter.
+                lda #<t1_value_1_row
+                sta system_via.t1l_l
+                lda #>t1_value_1_row
+                sta system_via.t1l_h
+
+                ; Additional CRTC setup.
+
+                ; Vsync row=N
+                lda #7
+                sta $fe00
+                lda #vsync_row-num_visible_rows
+                sta $fe01
+                
+
 halt:
                 jmp halt
+
+;-------------------------------------------------------------------------
+
+cycles_wait_131072:
+                jsr cycles_wait_65536
+cycles_wait_65536:
+                jsr cycles_wait_32768
+cycles_wait_32768:
+                jsr cycles_wait_16384
+cycles_wait_16384:
+                jsr cycles_wait_8192
+cycles_wait_8192:
+                jsr cycles_wait_4096
+cycles_wait_4096:
+                jsr cycles_wait_2048
+cycles_wait_2048:
+                jsr cycles_wait_1024
+cycles_wait_1024:
+                jsr cycles_wait_512
+cycles_wait_512:
+                jsr cycles_wait_256
+cycles_wait_256:
+                jsr cycles_wait_128
+cycles_wait_128:                ; JSR to get here takes 6c
+                
+                .nops 116
+cycles_wait_12:
+                rts
+
+;-------------------------------------------------------------------------
+
+handle_irq: .proc
+                stx reldx+1
+
+                ; there's only one source of IRQs here.
+                lda system_via.ifr
+                sta system_via.ifr ; acknowledge all
+
+                lda irq_region
+                beq handle_first_prepare_second
+                cmp #num_visible_rows-2
+                beq handle_penultimate_prepare_last
+                cmp #num_visible_rows-1
+                beq handle_last_prepare_first
+
+done:
+                inc irq_region
+reldx: ldx #$ff
+                
+                rts
+
+handle_first_prepare_second:
+                lda #4
+                sta $fe00
+                stz $fe01
+                bra done
+
+handle_last_prepare_first:
+                lda #<t1_value_1_row
+                sta system_via.t1l_l
+                lda #>t1_value_1_row
+                sta system_via.t1l_h
+
+                ; Vertical total=N
+                lda #4
+                sta $fe00
+                lda #total_num_rows-num_visible_rows
+                sta $fe01
+
+                ; the inc is inevitable, so ensure the value ends up
+                ; $00.
+                lda #$ff
+                sta irq_region
+                
+                bra done
+
+handle_penultimate_prepare_last:
+                lda #<t1_value_8_rows
+                sta system_via.t1l_l
+                lda #>t1_value_8_rows
+                sta system_via.t1l_h
+
+                bra done
+                
+                .endproc
+
+;-------------------------------------------------------------------------
 
 mode5_crtc:
                 ;     R0  R1  R2  R3  R4  R5  R6  R7
                 .byte $3f,$28,$31,$24,$26,$00,$20,$22
                 ;     R8  R9  R10 R11
-                .byte $00,$07,$67,$08
-                .byte >($300>>8) ; R12
-                .byte <($300>>8) ; R13
+                .byte $30,$07,$67,$08
+                .byte >($300>>3) ; R12
+                .byte <($300>>3) ; R13
+
+;-------------------------------------------------------------------------
 
 mode2_palette:
                 .for _i:=0,_i<16,_i+=1
                 .byte mode2_palette_entry(_i,_i&7)
                 .endfor
+
+;-------------------------------------------------------------------------
+
+font: .block
+                .include "../build/bbc_font.generated.s65"
+                .endblock
                 
+;-------------------------------------------------------------------------
+
+text:
+                .text "TEST SCROLLTEXT",0
+
+;-------------------------------------------------------------------------
+
                 .endsection code

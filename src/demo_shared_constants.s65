@@ -1,11 +1,13 @@
 ;-------------------------------------------------------------------------
 
-resident_base=$290
+resident_base=$280
 fdload_init=resident_base+0
 fdload_select_bank=resident_base+2
 fdload_restore_bank=resident_base+4
-null_irq_addr=resident_base+6
-
+irq_set_handler=resident_base+6
+irq_set_thunked_handler=resident_base+8
+irq_clear_handler=resident_base+10
+                
 ;-------------------------------------------------------------------------
 
 fdload_load_file_contents=$d80

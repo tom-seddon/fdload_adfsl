@@ -55,20 +55,10 @@ resident_end:
 start:
                 php
                 sei
-
-                ; the null IRQ handler is always available via jmp
-                ; (irq2v).
-                
                 lda #<null_irq
                 sta irq1v+0
-                sta irq2v+0
                 lda #>null_irq
                 sta irq1v+1
-                sta irq2v+1
-                lda #<null_brk
-                sta brkv+0
-                lda #>null_brk
-                sta brkv+1
 
                 ; disable all VIA IRQs
                 lda #$7f
@@ -134,6 +124,12 @@ sta_fdload_byte: sta fdload_dest,y
                 bra fdload_select_bank_2
                 .cerror *!=fdload_restore_bank
                 bra fdload_restore_bank_2
+                .cerror *!=irq_set_handler
+                bra set_irq_routine_2
+                .cerror *!=irq_set_thunked_handler
+                bra set_thunked_irq_routine_2
+                .cerror *!=irq_clear_handler
+                bra clear_irq_routine_2
 fdload_restore_bank_2:
                 sty romsel
                 rts
@@ -149,7 +145,30 @@ fdload_init_2:
                 sta romsel
                 jsr fdload.init
                 ply
-                bra fdload_restore_bank
+                bra fdload_restore_bank_2
+set_thunked_irq_routine_2:
+                php
+                sei
+                sta lda_wanted_romsel+1
+                stx jsr_actual_irq+1
+                sty jsr_actual_irq+2
+                ldx #<irq_thunk
+                ldy #>irq_thunk
+                bra set_irq_routine_3
+set_irq_routine_2:
+                php
+                sei
+                bra set_irq_routine_3
+clear_irq_routine_2:
+                php
+                sei
+                ldx #<null_irq
+                ldy #>null_irq
+set_irq_routine_3:
+                stx irq1v+0
+                sty irq1v+1
+                plp
+                rts
 null_irq:
                 lda system_via.ifr
                 bpl +
@@ -161,11 +180,19 @@ null_irq:
 +
                 lda $fc
                 rti
-null_brk
-                sei
-                ; TODO: flash the keyboard LEDs or something, so it's
-                ; clearer what's happened?
-                bra null_brk
+
+                ; 6502 overhead: +7 7
+                ; MOS preamble: 3+4+3+2+2+6=+20 +27
+irq_thunk:                      ;    27
+                lda romsel      ; +4 31
+                pha             ; +3 34
+lda_wanted_romsel: lda #$ff     ; +2 36
+                sta romsel      ; +4 40
+jsr_actual_irq: jsr $ffff       ; +6 46
+                pla
+                sta romsel
+                lda $fc
+                rti
                 .endsection resident
 
 ;-------------------------------------------------------------------------
