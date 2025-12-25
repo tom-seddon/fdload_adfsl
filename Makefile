@@ -39,7 +39,7 @@ TASS_ARGS:=--case-sensitive -Wall --cbm-prg $(if $(VERBOSE),,--quiet) --long-bra
 PWD:=$(shell $(PYTHON) submodules/shellcmd.py/shellcmd.py realpath .)
 
 # How to run shellcmd.py from any folder.
-SHELLCMD:=$(PYTHON) $(PWD)/submodules/shellcmd.py/shellcmd.py
+SHELLCMD:=$(PYTHON) "$(PWD)/submodules/shellcmd.py/shellcmd.py"
 
 # submodules/beeb/bin (absolute path).
 BEEB_BIN:=$(PWD)/submodules/beeb/bin
@@ -202,12 +202,19 @@ _asm:
 ##########################################################################
 
 .PHONY: _tom_emacs
-_tom_emacs: _CONFIG:=MOS 3.50r + BeebLink
-_tom_emacs: _CONFIG:=Master 128 (MOS 3.50)
-_tom_emacs: _DISK:=$(BUILD)/test_disk.adl
-_tom_emacs: _DISK:=$(BUILD)/pics_disk.adl
-_tom_emacs: _DISK:=$(BUILD)/demo_disk.adl
 _tom_emacs:
+	$(_V)$(MAKE) dist_scroller_0
+
+##########################################################################
+##########################################################################
+
+.PHONY:_tom_build_and_test
+_tom_build_and_test: _CONFIG:=MOS 3.50r + BeebLink
+_tom_build_and_test: _CONFIG:=Master 128 (MOS 3.50)
+_tom_build_and_test: _DISK:=$(BUILD)/test_disk.adl
+_tom_build_and_test: _DISK:=$(BUILD)/pics_disk.adl
+_tom_build_and_test: _DISK:=$(BUILD)/demo_disk.adl
+_tom_build_and_test:
 	$(_V)$(MAKE) build
 	curl --fail-with-body --connect-timeout 0.25 --silent 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
 	curl --fail-with-body --connect-timeout 0.25 --silent -H 'Content-Type:application/binary' --upload-file '$(_DISK)' 'http://localhost:48075/mount/b2?drive=0&name=$(_DISK)'
@@ -228,3 +235,14 @@ _tom_emacs:
 zx02_windows: SRC:=$(PWD)/submodules/zx02/src
 zx02_windows: _output_folders
 	cd "$(BUILD)" && cl /W4 /Zi /O2 /Fe$(PWD)/bin/zx02.exe "$(SRC)/compress.c" "$(SRC)/memory.c" "$(SRC)/optimize.c" "$(SRC)/zx02.c"
+
+##########################################################################
+##########################################################################
+
+.PHONY: dist_scroller_0
+dist_scroller_0: _OUTPUT:=$(BUILD)/dist_scroller
+dist_scroller_0:
+	$(_V)$(SHELLCMD) rm-tree "$(_OUTPUT)"
+	$(_V)$(SHELLCMD) mkdir "$(_OUTPUT)"
+	$(_V)cd "tests" && $(PYTHON) "dist_scroller.py" -o "$(_OUTPUT)"
+	$(_V)ffmpeg -y -i "$(_OUTPUT)/dist_scroller.%d.png" "$(BUILD)/dist_scroller.mp4"
