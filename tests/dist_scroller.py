@@ -7,7 +7,7 @@ import png
 
 def create_rgba_image(w,h):
     image=[]
-    for y in range(h): image.append(w*[0,0,0,255])
+    for y in range(h): image.append(w*[255,0,255,255])
     return image
 
 def resize_rgba_image(image):
@@ -21,53 +21,75 @@ def resize_rgba_image(image):
 
 def get_rgba_image_size(image): return (len(image[0])//4,len(image))
 
-def plot_rgba_pixel(image,x,y,r,g,b,a):
-    x=int(x)*4
+def get_rgba_indexes(image,x,y):
     y=int(y)
+    if y<0 or y>=len(image): return (None,None)
+    x=int(x)*4
+    if x<0 or x>=len(image[y]): return (None,None)
+    return (y,x)
 
-    if y<0: return
-    if y>=len(image): return
-    if x<0: return
-    if x>=len(image[y]): return
+def get_rgba_pixel(image,x,y):
+    i,j=get_rgba_indexes(image,x,y)
+    if i is None: return (0,0,0,255)
+    return (image[i][j+0],image[i][j+1],image[i][j+2],image[i][j+3])
 
-    image[y][x+0]=r
-    image[y][x+1]=g
-    image[y][x+2]=b
-    image[y][x+3]=a
+def put_rgba_pixel(image,x,y,rgba):
+    i,j=get_rgba_indexes(image,x,y)
+    if i is None: return
+    image[i][j+0]=rgba[0]
+    image[i][j+1]=rgba[1]
+    image[i][j+2]=rgba[2]
+    image[i][j+3]=rgba[3]
 
-def copy_rgba_pixel(dest,dx,dy,src,sx,sy):
-    dx=int(dx)*4
-    dy=int(dy)
-    sx=int(sx)*4
-    sy=int(sy)
+# def plot_rgba_pixel(image,x,y,r,g,b,a):
+#     x=int(x)*4
+#     y=int(y)
+
+#     if y<0: return
+#     if y>=len(image): return
+#     if x<0: return
+#     if x>=len(image[y]): return
+
+#     image[y][x+0]=r
+#     image[y][x+1]=g
+#     image[y][x+2]=b
+#     image[y][x+3]=a
+
+# def copy_rgba_pixel(dest,dx,dy,src,sx,sy):
+#     dx=int(dx)*4
+#     dy=int(dy)
+#     sx=int(sx)*4
+#     sy=int(sy)
     
-    if dy<0: return
-    if dy>=len(dest): return
-    if dx<0: return
-    if dx>=len(dest[dy]): return
-    if sy<0: return
-    if sy>=len(src): return
-    if sx<0: return
-    if sx>=len(src[sy]): return
+#     if dy<0: return
+#     if dy>=len(dest): return
+#     if dx<0: return
+#     if dx>=len(dest[dy]): return
+#     if sy<0: return
+#     if sy>=len(src): return
+#     if sx<0: return
+#     if sx>=len(src[sy]): return
     
-    assert dy>=0 and dy<len(dest)
-    assert sy>=0 and sy<len(src),(sy,len(src))
-    assert dx>=0 and dx+3<len(dest[dy]),(dx,len(dest[dy]))
-    assert sx>=0 and sx+3<len(src[sy])#,(sx,sy,len(src[0]),len(src))
-    sa=src[sy][sx+3]
-    assert sa>=0 and sa<256
-    sa/=255
-    def blend(s,d):
-        assert s>=0 and s<256
-        assert d>=0 and d<256
-        v=int(((s/255)*sa+(d/255)*(1-sa))*255.)
-        assert v>=0 and v<256
-        return v
+#     assert dy>=0 and dy<len(dest)
+#     assert sy>=0 and sy<len(src),(sy,len(src))
+#     assert dx>=0 and dx+3<len(dest[dy]),(dx,len(dest[dy]))
+#     assert sx>=0 and sx+3<len(src[sy])#,(sx,sy,len(src[0]),len(src))
+#     sa=src[sy][sx+3]
+#     assert sa>=0 and sa<256
+#     sa/=255
+#     def blend(s,d):
+#         assert s>=0 and s<256
+#         s/=255
+#         assert d>=0 and d<256
+#         d/=255
+#         v=int((s*sa+d*(1-sa))*255.)
+#         assert v>=0 and v<256
+#         return v
               
-    dest[dy][dx+0]=blend(src[sy][sx+0],dest[sy][sx+0])
-    dest[dy][dx+1]=blend(src[sy][sx+1],dest[sy][sx+1])
-    dest[dy][dx+2]=blend(src[sy][sx+2],dest[sy][sx+2])
-    dest[dy][dx+3]=src[sy][sx+3]
+#     dest[dy][dx+0]=blend(src[sy][sx+0],dest[sy][sx+0])
+#     dest[dy][dx+1]=blend(src[sy][sx+1],dest[sy][sx+1])
+#     dest[dy][dx+2]=blend(src[sy][sx+2],dest[sy][sx+2])
+#     dest[dy][dx+3]=src[sy][sx+3]
 
 def main2(options):
     png_result=png.Reader(filename='geebeeyay_8x16.png').asRGBA()
@@ -97,19 +119,22 @@ def main2(options):
 
     screen_width=80
     num_frames=250
-    num_x_cycle_frames=250
-    num_y_cycle_frames=32
+    num_x_cycle_frames=301
+    num_y_cycle_frames=201
+    x_scale=8
+    y_scale=8
+    half_res_x_scale=False
 
     for frame_idx in range(num_frames):
         image=create_rgba_image(screen_width,172)
 
         for x in range(screen_width):
-            theta=(frame_idx*5+(x&~1))%num_y_cycle_frames/num_y_cycle_frames*2*math.pi
-            y_offset=math.sin(theta)*8
+            theta=(frame_idx*2+(x&~1))%num_y_cycle_frames/num_y_cycle_frames*2*math.pi
+            y_offset=math.sin(theta)*16
 
             # halve Y wobble resolution
             neg=y_offset<0
-            #y_offset=abs(y_offset)//2*2
+            y_offset=abs(y_offset)#//2*2
             if neg: y_offset=-y_offset
             #plot_rgba_pixel(image,x,y,255,255,255,255)
 
@@ -123,13 +148,20 @@ def main2(options):
 
             for y in range(len(image)):
                 theta=(frame_idx*10+(y&~1))%num_x_cycle_frames/num_x_cycle_frames*2*math.pi
-                dx=int(math.sin(theta)*4)*2
+                # half res X movement :(
+                dx=int(math.sin(theta)*x_scale)
+                if half_res_x_scale:
+                    dx//=2
+                    dx*=2
                 
                 sy=y%glyph_height-y_offset
                 if sy<0: sy+=glyph_height
                 elif sy>=glyph_height: sy-=glyph_height
-                copy_rgba_pixel(image,x+dx,y,
-                                glyphs[ch],x%glyph_width,sy)
+
+                p=get_rgba_pixel(glyphs[ch],x%glyph_width,sy)
+                put_rgba_pixel(image,x+dx,y,p)
+                # copy_rgba_pixel(image,x+dx,y,
+                #                 glyphs[ch],x%glyph_width,sy)
             
         print('frame %d: %s'%(frame_idx,get_rgba_image_size(image)))
 
