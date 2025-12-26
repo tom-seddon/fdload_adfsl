@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import sys,os,argparse,math
+import sys,os,argparse,math,subprocess
 import png
 
 ##########################################################################
@@ -156,7 +156,7 @@ def main2(options):
     screen_height=168
     num_frames=250
     num_x_cycle_frames=300
-    num_y_cycle_frames=80
+    num_y_cycle_frames=110
 
     # every 2 pixels means 2 extra columns per row.
     x_scale=8
@@ -195,15 +195,23 @@ def main2(options):
         return int(n)
 
     def create_frame_image_3(frame_idx):
+        assert glyph_height%char_row_height==0
+        assert screen_height%char_row_height==0
+        
+        logical_width=screen_width+x_scale*2
+
         # render by repeatedly copying a single row that's 1 glyph
         # high
-        image=create_rgba_image(screen_width,glyph_height)
+        image=create_rgba_image(logical_width,glyph_height)
 
         text_base_x=-screen_width+frame_idx
 
+        if frame_idx==0:
+            print('logical_width=%d'%logical_width)
+
         for y in range(glyph_height):
-            for x in range(screen_width):
-                y_theta=(0+(get_int_maybe_half_res(x,False)))%num_y_cycle_frames/num_y_cycle_frames*2*math.pi
+            for x in range(logical_width):
+                y_theta=(frame_idx*2+(get_int_maybe_half_res(x,True)))%num_y_cycle_frames/num_y_cycle_frames*2*math.pi
                 y_offset=math.sin(y_theta)*y_scale
                 y_offset=get_int_maybe_half_res(y_offset,half_res_y_scale)
                 
@@ -219,16 +227,33 @@ def main2(options):
                                      text_x%glyph_width,
                                      (y+y_offset)%glyph_height)
                 put_rgba_pixel(image,x,y,pixel)
+            #blend_rgba_pixel(image,79,y,(255,255,255,128))
 
         full_image=create_rgba_image(screen_width,screen_height)
-        for y in range(0,screen_height,glyph_height):
-            copy_rgba_block(full_image,0,y,
-                            image,0,0,screen_width,glyph_height)
-            if y>0:
-                for x in range(screen_width):
-                    put_rgba_pixel(full_image,x,y,(255,255,255,128))
+        num_rows=screen_height//char_row_height
+        for row in range(num_rows):
+            dest_y=row*char_row_height
+            x_theta=(frame_idx*2+row)%num_x_cycle_frames/num_x_cycle_frames*2*math.pi
+            x_offset=math.sin(x_theta)*x_scale
 
-        return full_image
+            src_x=x_scale+x_offset
+            src_y=dest_y%glyph_height
+
+            copy_rgba_block(full_image,0,dest_y,
+                            image,src_x,src_y,screen_width,char_row_height)
+
+            # for x in range(screen_width):
+            #     blend_rgba_pixel(full_image,x,dest_y,(255,255,255,128))
+
+        # full_image=create_rgba_image(screen_width,screen_height)
+        # for y in range(0,screen_height,glyph_height):
+        #     copy_rgba_block(full_image,0,y,
+        #                     image,0,0,screen_width,glyph_height)
+        #     if y>0:
+        #         for x in range(screen_width):
+        #             put_rgba_pixel(full_image,x,y,(255,255,255,128))
+
+        return {'':full_image,'.one_row':image}
 
     def create_frame_image_2(frame_idx):
         # render starting from screen (x,y)
@@ -263,7 +288,7 @@ def main2(options):
                 # if x%2==0 or y%char_row_height==0:
                 #     blend_rgba_pixel(image,x,y,(255,255,255,64))
 
-        return image
+        return {'':image}
     
     def create_frame_image_1(frame_idx):
         # render forward
@@ -303,31 +328,46 @@ def main2(options):
                 put_rgba_pixel(image,x+dx,y,p)
                 # copy_rgba_pixel(image,x+dx,y,
                 #                 glyphs[ch],x%glyph_width,sy)
-        return image
+        return {'':image}
 
+    names=set()
     full_progress='*'*50
     for frame_idx in range(num_frames):
-        image=create_frame_image_2(frame_idx)
+        images=create_frame_image_3(frame_idx)
 
         sys.stdout.write('[%-*.*s]\r'%(len(full_progress),int(frame_idx/(num_frames-1)*len(full_progress)),full_progress))
 
-        if options.output_folder is not None:
-            image=resize_rgba_image(image)
+        if options.intermediate_folder is not None:
+            for name,image in images.items():
+                names.add(name)
+                image=resize_rgba_image(image)
 
-            output_path=os.path.join(options.output_folder,
-                                     'dist_scroller.%d.png'%frame_idx)
-            png.from_array(image,'RGBA').save(output_path)
-            # with open(output_path,'wb') as f:
-            #     png.Writer(len(image[0])//4,len(image),alpha=True).write(f,image)
+                output_path=os.path.join(options.intermediate_folder,
+                                         'dist_scroller%s.%d.png'%(name,frame_idx))
+                png.from_array(image,'RGBA').save(output_path)
 
     print()
+
+    if (options.intermediate_folder is not None and
+        options.output_folder is not None):
+        for name in names:
+            argv=['ffmpeg',
+                  '-y',
+                  '-r','50',
+                  '-i',os.path.join(options.intermediate_folder,
+                                    'dist_scroller%s.%%d.png'%name),
+                  '-pix_fmt','yuv420p',
+                  os.path.join(options.output_folder,
+                               'dist_scroller%s.mp4'%name)]
+            subprocess.run(argv,check=True)
 
 ##########################################################################
 ##########################################################################
 
 def main(argv):
     parser=argparse.ArgumentParser()
-    parser.add_argument('-o',dest='output_folder',metavar='FOLDER',help='''where to write output files''')
+    parser.add_argument('--intermediate',dest='intermediate_folder',metavar='FOLDER',help='''where to write intermediate files''')
+    parser.add_argument('--output',dest='output_folder',metavar='FOLDER',help='''where to write output files''')
 
     main2(parser.parse_args(argv))
 

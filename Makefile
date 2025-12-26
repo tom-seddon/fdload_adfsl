@@ -203,6 +203,7 @@ _asm:
 
 .PHONY: _tom_emacs
 _tom_emacs:
+#	$(_V)$(MAKE) _tom_build_and_test
 	$(_V)$(MAKE) dist_scroller_0 PYTHON=python3.14
 
 ##########################################################################
@@ -240,9 +241,9 @@ zx02_windows: _output_folders
 ##########################################################################
 
 .PHONY: dist_scroller_0
-dist_scroller_0: _OUTPUT:=$(BUILD)/dist_scroller
+dist_scroller_0: _INTERMEDIATE:=$(BUILD)/dist_scroller
 dist_scroller_0:
-	$(_V)$(SHELLCMD) rm-tree "$(_OUTPUT)"
-	$(_V)$(SHELLCMD) mkdir "$(_OUTPUT)"
-	$(_V)cd "tests" && $(PYTHON) "dist_scroller.py" -o "$(_OUTPUT)"
-	$(_V)ffmpeg -y -r 50 -i "$(_OUTPUT)/dist_scroller.%d.png" -pix_fmt yuv420p "$(BUILD)/dist_scroller.mp4"
+	$(_V)$(SHELLCMD) rm-tree "$(_INTERMEDIATE)"
+	$(_V)$(SHELLCMD) mkdir "$(_INTERMEDIATE)"
+	$(_V)cd "tests" && $(PYTHON) "dist_scroller.py" --output "$(BUILD)" --intermediate "$(_INTERMEDIATE)"
+#	$(_V)ffmpeg -y -r 50 -i "$(_OUTPUT)/dist_scroller.%d.png" -pix_fmt yuv420p "$(BUILD)/dist_scroller.mp4"
