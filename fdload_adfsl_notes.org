@@ -736,6 +736,8 @@ restores old ROMSEL. Not too many bytes.
 
 * scroller0
 
+https://discord.com/channels/1256614067070828615/1265647001014374412
+
 | Row | Notes |
 |-----+-------|
 |   0 |       |

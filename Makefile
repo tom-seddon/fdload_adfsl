@@ -245,4 +245,4 @@ dist_scroller_0:
 	$(_V)$(SHELLCMD) rm-tree "$(_OUTPUT)"
 	$(_V)$(SHELLCMD) mkdir "$(_OUTPUT)"
 	$(_V)cd "tests" && $(PYTHON) "dist_scroller.py" -o "$(_OUTPUT)"
-	$(_V)ffmpeg -y -i "$(_OUTPUT)/dist_scroller.%d.png" -pix_fmt yuv420p "$(BUILD)/dist_scroller.mp4"
+	$(_V)ffmpeg -y -r 50 -i "$(_OUTPUT)/dist_scroller.%d.png" -pix_fmt yuv420p "$(BUILD)/dist_scroller.mp4"
