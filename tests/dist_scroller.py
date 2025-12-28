@@ -184,6 +184,14 @@ def main2(options):
     # doesn't prove too much.
     char_row_height=4
 
+    # gap between chars, if any.
+    #
+    # (Annoyingly, it looks a lot better with gap=0, which is a shame
+    # as it means that the last column of each shifted char will have
+    # to be merged at some point with the first column of the next
+    # one.)
+    gap=0
+
     scroller_x=0
 
     def get_int_maybe_half_res(n,halve):
@@ -217,14 +225,20 @@ def main2(options):
                 
                 text_x=text_base_x+x
                 if text_x<0: ch=32
-                else: ch=ord(text[text_x//glyph_width%len(text)])
+                else: ch=ord(text[text_x//(glyph_width+gap)%len(text)])
                     
                 assert ch>=32 and ch<127
                 ch-=32
                 assert ch<len(glyphs)
 
+                glyph_x=text_x%(glyph_width+gap)
+                if glyph_x>=glyph_width:
+                    # read gap columns from the space char
+                    ch=0
+                    glyph_x=0
+
                 pixel=get_rgba_pixel(glyphs[ch],
-                                     text_x%glyph_width,
+                                     glyph_x,
                                      (y+y_offset)%glyph_height)
                 put_rgba_pixel(image,x,y,pixel)
             #blend_rgba_pixel(image,79,y,(255,255,255,128))
@@ -335,7 +349,7 @@ def main2(options):
     for frame_idx in range(num_frames):
         images=create_frame_image_3(frame_idx)
 
-        sys.stdout.write('[%-*.*s]\r'%(len(full_progress),int(frame_idx/(num_frames-1)*len(full_progress)),full_progress))
+        sys.stdout.write('\r[%-*.*s]'%(len(full_progress),int(frame_idx/(num_frames-1)*len(full_progress)),full_progress))
 
         if options.intermediate_folder is not None:
             for name,image in images.items():
