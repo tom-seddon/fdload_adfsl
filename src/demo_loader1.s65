@@ -120,16 +120,25 @@ sta_fdload_byte: sta fdload_dest,y
                 .section resident
                 .cerror *!=fdload_init
                 bra fdload_init_2
+                .fill 4         ; space for BRKV and IRQ1V
                 .cerror *!=fdload_select_bank
                 bra fdload_select_bank_2
                 .cerror *!=fdload_restore_bank
                 bra fdload_restore_bank_2
                 .cerror *!=irq_set_handler
-                bra set_irq_routine_2
-                .cerror *!=irq_set_thunked_handler
-                bra set_thunked_irq_routine_2
-                .cerror *!=irq_clear_handler
-                bra clear_irq_routine_2
+                bra irq_set_handler_2
+                .cerror *!=irq_reset_handler
+                bra irq_reset_handler_2
+                .cerror *!=irq_copy_handler
+                bra irq_copy_handler_2
+fdload_init_2:
+                jsr fdload_select_bank_2
+                phy
+                lda #fdload_rom_bank
+                sta romsel
+                jsr fdload.init
+                ply
+                .cerror *!=fdload_restore_bank_2
 fdload_restore_bank_2:
                 sty romsel
                 rts
@@ -138,37 +147,40 @@ fdload_select_bank_2:
                 ldx #fdload_rom_bank
                 stx romsel
                 rts
-fdload_init_2:
-                jsr fdload_select_bank_2
-                phy
-                lda #fdload_rom_bank
-                sta romsel
-                jsr fdload.init
-                ply
-                bra fdload_restore_bank_2
-set_thunked_irq_routine_2:
-                php
-                sei
-                sta lda_wanted_romsel+1
-                stx jsr_actual_irq+1
-                sty jsr_actual_irq+2
-                ldx #<irq_thunk
-                ldy #>irq_thunk
-                bra set_irq_routine_3
-set_irq_routine_2:
-                php
-                sei
-                bra set_irq_routine_3
-clear_irq_routine_2:
-                php
-                sei
-                ldx #<null_irq
+irq_reset_handler_2:
                 ldy #>null_irq
-set_irq_routine_3:
+                ldx #<null_irq
+                .cerror *!=irq_set_handler_2
+irq_set_handler_2:
+                php
+                sei
+irq_set_handler_3:
                 stx irq1v+0
                 sty irq1v+1
                 plp
                 rts
+irq_copy_handler_2: .block
+                php
+                sei
+                stx lda_handler_byte+1
+                sty lda_handler_byte+2
+                .cerror size(irq_handler_space)!=128
+                ldx #0
+loop:
+lda_handler_byte: lda $ffff,x
+                sta irq_handler_space,x
+                inx
+                bpl loop
+                ; X=$80 at this point, so save a couple of bytes...
+                .cerror (<irq_handler_space)!=$80
+                ldy #>irq_handler_space
+                bra irq_set_handler_3
+                .endblock
+
+                ; ~11 bytes free here
+                .cerror *>$258
+                .fill $258-*
+                .byte 3         ; MOS memory clear flags
 null_irq:
                 lda system_via.ifr
                 bpl +
@@ -178,19 +190,6 @@ null_irq:
                 bpl +
                 sta user_via.ifr
 +
-                lda $fc
-                rti
-
-                ; 6502 overhead: +7 7
-                ; MOS preamble: 3+4+3+2+2+6=+20 +27
-irq_thunk:                      ;    27
-                lda romsel      ; +4 31
-                pha             ; +3 34
-lda_wanted_romsel: lda #$ff     ; +2 36
-                sta romsel      ; +4 40
-jsr_actual_irq: jsr $ffff       ; +6 46
-                pla
-                sta romsel
                 lda $fc
                 rti
                 .endsection resident

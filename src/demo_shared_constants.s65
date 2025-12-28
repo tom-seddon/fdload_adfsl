@@ -1,12 +1,21 @@
 ;-------------------------------------------------------------------------
 
-resident_base=$280
-fdload_init=resident_base+0
-fdload_select_bank=resident_base+2
-fdload_restore_bank=resident_base+4
-irq_set_handler=resident_base+6
-irq_set_thunked_handler=resident_base+8
-irq_clear_handler=resident_base+10
+resident_base=$200
+                .logical resident_base+$80
+irq_handler_space: .fill 128
+                .endlogical
+                .logical resident_base
+fdload_init: .fill 2
+                .fill 2         ; space for BRKV
+                .fill 2         ; space for IRQ1V
+fdload_select_bank: .fill 2
+fdload_restore_bank: .fill 2
+irq_set_handler: .fill 2
+irq_reset_handler: .fill 2
+irq_copy_handler: .fill 2
+                .cerror *>irq_handler_space
+                .endlogical
+
                 
 ;-------------------------------------------------------------------------
 

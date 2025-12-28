@@ -3,6 +3,10 @@
 
 ;-------------------------------------------------------------------------
 
+store_indicators=true
+                
+;-------------------------------------------------------------------------
+
 mode2_palette_entry: .function _logical,_physical
                 .cerror !((_logical)>=0&&(_logical)<16)
                 .cerror !((_physical)>=0&&(_physical)<16)
@@ -157,23 +161,27 @@ init_zp_loop:
 
                 ldx #0
 clear_memory_loop:
-;                 and #7
-;                 cmp #7
-;                 beq indicator
-;                 lda store_clear_memory+2
-;                 bra store_clear_memory
-; indicator:
-;                 lda #$ff
+                .if store_indicators
+                txa
+                and #7
+                cmp #7
+                beq indicator
+                lda store_clear_memory+2
+                bra store_clear_memory
+indicator:
+                lda #$ff
+store_clear_memory: sta $300,x
+                .else
 store_clear_memory: stz $300,x
+                .endif                
                 inx
                 bne clear_memory_loop
                 inc store_clear_memory+2
                 bpl clear_memory_loop
 
-                lda romsel
                 ldx #<handle_irq
                 ldy #>handle_irq
-                jsr irq_set_thunked_handler
+                jsr irq_copy_handler
 
                 ; lda #$80|VIAIRQ.t1
                 ; sta system_via.ier
@@ -284,8 +292,8 @@ handle_irq: .proc
 done:
                 inc irq_region
 reldx: ldx #$ff
-                
-                rts
+                lda $fc
+                rti                
 
 handle_first_prepare_second:
                 lda #4
@@ -321,6 +329,7 @@ handle_penultimate_prepare_last:
                 bra done
                 
                 .endproc
+                .cerror size(handle_irq)>size(irq_handler_space)
 
 ;-------------------------------------------------------------------------
 

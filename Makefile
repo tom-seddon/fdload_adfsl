@@ -203,8 +203,8 @@ _asm:
 
 .PHONY: _tom_emacs
 _tom_emacs:
-#	$(_V)$(MAKE) _tom_build_and_test
-	$(_V)$(MAKE) dist_scroller_0 PYTHON=python3.14
+	$(_V)$(MAKE) _tom_build_and_test
+#	$(_V)$(MAKE) dist_scroller_0 PYTHON=python3.14
 
 ##########################################################################
 ##########################################################################

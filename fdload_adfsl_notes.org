@@ -713,26 +713,214 @@ rows.
 
 (Equivalent 640 byte row counts 
 
-** Acorn OS
+** Acorn OS memory use
 
-In zero page, only $FC is actually reserved. The MOS interrupt
-preamble always overwrites it. fdload fits itself in around this.
+Addresses that are unavailable for use:
 
-For page 2: the MOS interrupt preamble jumps through IRQ1V, so that's
-fixed.
+| Address     | Notes                                       |
+|-------------+---------------------------------------------|
+| $00fc       | overwritten by IRQ/BRK handler              |
+| $0204,$0205 | IRQ1V, called by IRQ/BRK handler if not BRK |
 
-Keeping BRKV free is worthwhile as it'd be nice to have a useful BRK
-routine (or at least one that doesn't cause a crash).
+The IRQ/BRK handler initiates a ROM service call before calling BRKV,
+so handling BRK properly is going to be annoying, but it could
+probably be done if there'd be a need. But there probably won't be;
+this would only come in handy for debugging, and that can be done on
+an emulator.
 
-It'd be good to have the =*FX200,3= flag at $0258 retained, so that
-memory is wiped if pressing BREAK during the demo. Try to avoid
-leaving too much of a mess behind.
+Addresses that are ideally unavailable for use:
 
-$0290 and upwards is effectively free. 
+| Address | Notes                                                                                        |
+|---------+----------------------------------------------------------------------------------------------|
+| $0258   | memory clear flag (set by OSBYTE 200) - setting this to 3 will hopefully ensure a tidy reset |
 
-There'll probably be an fdload_init entry point in page 2 somewhere,
-that selects the fdload bank, copies the code to main RAM, and
-restores old ROMSEL. Not too many bytes.
+** Page $02
+
+IRQ1V will need to be left available, so page $02 is already at least
+partly reserved.
+
+Some of what it might be reserved for could go in page $01, but it'd
+be nice to leave all of that free.
+
+The main RAM screen start address can't really go below $0300 (see
+above), so no harm in reserving all of it.
+
+So, with that in mind, might as well reserve all of it.
+
+Page 2 memory use:
+
+| Address  | What                   | Notes                            |
+|----------+------------------------+----------------------------------|
+| $0200    | fdload_init            | resident entry point             |
+| $0201    |                        |                                  |
+| $0202    | BRKV LSB               | Not actually used, but... maybe? |
+| $0203    | BRKV MSB               | "                                |
+| $0204    | IRQ1V LSB              |                                  |
+| $0205    | IRQ1V MSB              |                                  |
+| $0206    | fdload_select_bank     | resident entry point             |
+| $0207    |                        |                                  |
+| $0208    | fdload_restore_bank    | resident entry point             |
+| $0209    |                        |                                  |
+| $020a    | irq_set_handler        | resident entry point             |
+| $020b    |                        |                                  |
+| $020c    | irq_reset_handler      | resident entry point             |
+| $020d    |                        |                                  |
+| $020e    | irq_copy_handler       | resident entry point             |
+| $020f    |                        |                                  |
+| $0210    |                        |                                  |
+| $0211    |                        |                                  |
+| $0212    |                        |                                  |
+| $0213    |                        |                                  |
+| $0214    |                        |                                  |
+| $0215    |                        |                                  |
+| $0216    |                        |                                  |
+| $0217    |                        |                                  |
+| $0218    |                        |                                  |
+| $0219    |                        |                                  |
+| $021a    |                        |                                  |
+| $021b    |                        |                                  |
+| $021c    |                        |                                  |
+| $021d    |                        |                                  |
+| $021e    |                        |                                  |
+| $021f    |                        |                                  |
+| $0220    |                        |                                  |
+| $0221    |                        |                                  |
+| $0222    |                        |                                  |
+| $0223    |                        |                                  |
+| $0224    |                        |                                  |
+| $0225    |                        |                                  |
+| $0226    |                        |                                  |
+| $0227    |                        |                                  |
+| $0228    |                        |                                  |
+| $0229    |                        |                                  |
+| $022a    |                        |                                  |
+| $022b    |                        |                                  |
+| $022c    |                        |                                  |
+| $022d    |                        |                                  |
+| $022e    |                        |                                  |
+| $022f    |                        |                                  |
+| $0230    |                        |                                  |
+| $0231    |                        |                                  |
+| $0232    |                        |                                  |
+| $0233    |                        |                                  |
+| $0234    |                        |                                  |
+| $0235    |                        |                                  |
+| $0236    |                        |                                  |
+| $0237    |                        |                                  |
+| $0238    |                        |                                  |
+| $0239    |                        |                                  |
+| $023a    |                        |                                  |
+| $023b    |                        |                                  |
+| $023c    |                        |                                  |
+| $023d    |                        |                                  |
+| $023e    |                        |                                  |
+| $023f    |                        |                                  |
+| $0240    |                        |                                  |
+| $0241    |                        |                                  |
+| $0242    |                        |                                  |
+| $0243    |                        |                                  |
+| $0244    |                        |                                  |
+| $0245    |                        |                                  |
+| $0246    |                        |                                  |
+| $0247    |                        |                                  |
+| $0248    |                        |                                  |
+| $0249    |                        |                                  |
+| $024a    |                        |                                  |
+| $024b    |                        |                                  |
+| $024c    |                        |                                  |
+| $024d    |                        |                                  |
+| $024e    |                        |                                  |
+| $024f    |                        |                                  |
+| $0250    |                        |                                  |
+| $0251    |                        |                                  |
+| $0252    |                        |                                  |
+| $0253    |                        |                                  |
+| $0254    |                        |                                  |
+| $0255    |                        |                                  |
+| $0256    |                        |                                  |
+| $0257    |                        |                                  |
+| $0258    | MOS memory clear flags |                                  |
+| $0259    |                        |                                  |
+| $025a    |                        |                                  |
+| $025b    |                        |                                  |
+| $025c    |                        |                                  |
+| $025d    |                        |                                  |
+| $025e    |                        |                                  |
+| $025f    |                        |                                  |
+| $0260    |                        |                                  |
+| $0261    |                        |                                  |
+| $0262    |                        |                                  |
+| $0263    |                        |                                  |
+| $0264    |                        |                                  |
+| $0265    |                        |                                  |
+| $0266    |                        |                                  |
+| $0267    |                        |                                  |
+| $0268    |                        |                                  |
+| $0269    |                        |                                  |
+| $026a    |                        |                                  |
+| $026b    |                        |                                  |
+| $026c    |                        |                                  |
+| $026d    |                        |                                  |
+| $026e    |                        |                                  |
+| $026f    |                        |                                  |
+| $0270    |                        |                                  |
+| $0271    |                        |                                  |
+| $0272    |                        |                                  |
+| $0273    |                        |                                  |
+| $0274    |                        |                                  |
+| $0275    |                        |                                  |
+| $0276    |                        |                                  |
+| $0277    |                        |                                  |
+| $0278    |                        |                                  |
+| $0279    |                        |                                  |
+| $027a    |                        |                                  |
+| $027b    |                        |                                  |
+| $027c    |                        |                                  |
+| $027d    |                        |                                  |
+| $027e    |                        |                                  |
+| $027f    |                        |                                  |
+| $0280... | Space for IRQ routine  |                                  |
+
+The space for the IRQ routine is there because it's free, and it's a
+useful amount of space for an IRQ handler. But the IRQ handler can go
+anywhere.
+
+
+** Resident entry points
+
+*** =fdload_init=
+
+Entry point for =fdload.init= (see above) to copy fdload routines into
+main RAM and make fdload entry points available.
+
+*** =fdload_select_bank=; =fdload_restore_bank=
+
+fdload callbacks, not for general use.
+
+*** =irq_set_handler=
+
+Set IRQ handler to a specific routine: Y=MSB, X=LSB. Disables IRQs
+while it does the thing. Save a few bytes compared to inlining the
+(not exactly complicated) code.
+
+The IRQ routine must end with `lda $fc:rti`.
+
+*** =irq_reset_handler=
+
+Set IRQ handler to a no-op-ish routine, that acknowledges all system
+VIA and user VIA IRQs then returns.
+
+*** =irq_copy_handler=
+
+Copy an IRQ routine to main RAM in page 2, then use =set_irq_handler=
+(see above) to set the copy as the IRQ handler.
+
+Max size of IRQ routine is =size(irq_handler_space)= (TODO: should
+probably accept this is exactly 128...?), and the max size is always
+copied.
+
+IRQs are disabled for the copy. Assume 16 cycles/byte and you won't be
+disappointed, probably.
 
 * scroller0
 
