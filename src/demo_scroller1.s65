@@ -45,6 +45,7 @@ num_frames: .fill 1
 glyph_ptrs_offset: .fill 1
 column_glyph_ptr: .fill 2
 num_vsyncs: .fill 1
+y_offset_ptr: .fill 2
                 .endsection zp
 
 ;-------------------------------------------------------------------------
@@ -122,6 +123,8 @@ init_column_glyph_ptrs_loop:
 
                 jsr reset_dynamic_glyph_column_ptr
 
+                jsr reset_y_offset_ptr
+
 loop_one_char:
                 jsr fetch_glyph_ptr
 
@@ -191,6 +194,43 @@ got_dynamic_glyph_column:
 
 ;-------------------------------------------------------------------------
 
+scroll_unroll: .macro debug,dest
+
+                .for column in range(num_columns)
+                lda column_glyph_ptrs_lsb,x ; LSB
+                sta column_glyph_ptr+0
+                lda column_glyph_ptrs_msb,x
+                sta column_glyph_ptr+1
+
+                ldy #column
+                lda (y_offset_ptr),y
+                tay
+
+                inx
+
+                .for row in range(16)
+                lda (column_glyph_ptr),y
+                iny
+                .if \debug
+dest:=\dest
+dest+=column%40*8
+dest+=column/40*640
+dest+=row/8*320
+dest+=row%8
+                sta dest
+                .else
+dest:=\dest
+dest+=column*8
+dest+=row/4*320
+dest+=row%4
+                .error
+                .endif
+                .endfor
+                .endfor
+                
+                
+                .endmacro
+                
 scroll:
                 phx             ; save initial offset
                 
@@ -207,38 +247,45 @@ scroll:
                 pha             ; save column_glyph_ptrs offset
 
                 tax
+
+                .scroll_unroll true,$6700
                 
-                .for column in range(num_columns)
-                lda column_glyph_ptrs_lsb,x ; LSB
-                sta column_glyph_ptr+0
-                lda column_glyph_ptrs_msb,x
-                sta column_glyph_ptr+1
-                inx
+                ; .for column in range(num_columns)
+                ; lda column_glyph_ptrs_lsb,x ; LSB
+                ; sta column_glyph_ptr+0
+                ; lda column_glyph_ptrs_msb,x
+                ; sta column_glyph_ptr+1
+                ; inx
 
-                ; txa
-                ; and #15
-                ; tay
-                ldy #0
+                ; ; txa
+                ; ; and #15
+                ; ; tay
+                ; ldy #0
 
-                .for row in range(16)
-                lda (column_glyph_ptr),y
-                iny
-                sta $6700+(column%40)*8+(column/40)*640+(row/8)*320+(row%8)
-                .endfor
-                .endfor
+                ; .for row in range(16)
+                ; lda (column_glyph_ptr),y
+                ; iny
+                ; sta $6700+(column%40)*8+(column/40)*640+(row/8)*320+(row%8)
+                ; .endfor
+                ; .endfor
 
                 .if visible_timing
                 lda #mode2_palette_entry(0,0)
                 sta video_ula_palette
                 .endif
 
-                ldx #1
+                ldy #1
 wait_for_n_vsyncs_loop:
                 lda num_vsyncs
 wait_for_vsync_loop:
+                ; do memory refresh while waiting. initial X value
+                ; doesn't matter... it'll visit all of them
+                ; eventually.
+                bit 0,x
+                inx
                 cmp num_vsyncs
                 beq wait_for_vsync_loop
-                dex
+                dey
                 bne wait_for_n_vsyncs_loop
 
                 .if visible_timing
@@ -273,10 +320,7 @@ wait_for_vsync_loop:
 +
                 sta glyph_ptrs_offset
 
-                ; and bump the corresponding register too. the buffer
-                ; is sized and updated for two full copies, so if
-                ; Y=num_columns then it's not actually a problem.
-                iny
+                jsr next_y_offset_ptr
 
 got_glyph_ptrs_offset:
 
@@ -295,6 +339,32 @@ reset_dynamic_glyph_column_ptr:
                 sta dynamic_glyph_column_ptr+1
 
                 rts
+
+;-------------------------------------------------------------------------
+
+next_y_offset_ptr: .block
+y_sines_end=y_sines+y_sines_size
+                
+                inc y_offset_ptr+0
+                bne +
+                inc y_offset_ptr+1
++
+                lda y_offset_ptr+0
+                cmp #<y_sines_end
+                bne reset_y_offset_ptr.done
+                lda y_offset_ptr+1
+                cmp #>y_sines_end
+                bne reset_y_offset_ptr.done
+                .cerror *!=reset_y_offset_ptr
+                .endblock
+reset_y_offset_ptr: .block
+                lda #<y_sines
+                sta y_offset_ptr+0
+                lda #>y_sines
+                sta y_offset_ptr+1
+done:
+                rts
+                .endblock
                 
 ;-------------------------------------------------------------------------
 
@@ -362,6 +432,15 @@ mode2_palette:
                 .include "../build/dist_scroller.text.generated.s65"
                 .include "../build/dist_scroller.glyphs.generated.s65"
 
+;-------------------------------------------------------------------------
+
+y_sines_size=300
+y_sines:
+                .bfor i in range(y_sines_size+num_columns)
+theta=float(i)/y_sines_size*2*pi
+                .byte floor(16+sin(theta)*16)%16
+                .endfor
+                
 ;-------------------------------------------------------------------------
 
                 .endsection code
