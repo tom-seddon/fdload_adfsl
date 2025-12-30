@@ -55,10 +55,6 @@ resident_end:
 start:
                 php
                 sei
-                lda #<null_irq
-                sta irq1v+0
-                lda #>null_irq
-                sta irq1v+1
 
                 ; disable all VIA IRQs
                 lda #$7f
@@ -70,14 +66,14 @@ start:
                 ; sideways RAM in MOS 3.50. Not actually a problem in
                 ; this case.)
                 
-                plp
-
                 ldx #resident_end-resident_begin-1
 copy_resident_loop:
                 lda resident_begin,x
                 sta resident_base,x
                 dex
                 bpl copy_resident_loop
+
+                plp
 
                 jsr fdload_select_bank
                 
@@ -120,7 +116,8 @@ sta_fdload_byte: sta fdload_dest,y
                 .section resident
                 .cerror *!=fdload_init
                 bra fdload_init_2
-                .fill 4         ; space for BRKV and IRQ1V
+                .word 0         ; BRKV
+                .word null_irq  ; IRQ1V
                 .cerror *!=fdload_select_bank
                 bra fdload_select_bank_2
                 .cerror *!=fdload_restore_bank
