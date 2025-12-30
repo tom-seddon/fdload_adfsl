@@ -3,6 +3,11 @@
 
 ;-------------------------------------------------------------------------
 
+; if set, show timing using palette switches.
+visible_timing=true
+
+;-------------------------------------------------------------------------
+
 *=$00
                 .dsection zp
                 .cerror *>reserved_zp_begin
@@ -77,6 +82,14 @@ init_palette_loop:
                 sta video_ula_palette
                 dex
                 bpl init_palette_loop
+
+                ldx #0
+clear_memory_loop:
+clear_memory_store: stz $5800,x
+                inx
+                bne clear_memory_loop
+                inc clear_memory_store+2
+                bpl clear_memory_loop
 
                 stz video_ula_control ; Mode 8
 
@@ -179,6 +192,8 @@ got_dynamic_glyph_column:
 ;-------------------------------------------------------------------------
 
 scroll:
+                phx             ; save initial offset
+                
                 ; select frame0 or frame1 tables.
                 lda num_frames
                 and #1
@@ -189,7 +204,50 @@ scroll:
                 ; apply offset.
                 clc
                 adc glyph_ptrs_offset
-                tay
+                pha             ; save column_glyph_ptrs offset
+
+                tax
+                
+                .for column in range(num_columns)
+                lda column_glyph_ptrs_lsb,x ; LSB
+                sta column_glyph_ptr+0
+                lda column_glyph_ptrs_msb,x
+                sta column_glyph_ptr+1
+                inx
+
+                ; txa
+                ; and #15
+                ; tay
+                ldy #0
+
+                .for row in range(16)
+                lda (column_glyph_ptr),y
+                iny
+                sta $6700+(column%40)*8+(column/40)*640+(row/8)*320+(row%8)
+                .endfor
+                .endfor
+
+                .if visible_timing
+                lda #mode2_palette_entry(0,0)
+                sta video_ula_palette
+                .endif
+
+                ldx #1
+wait_for_n_vsyncs_loop:
+                lda num_vsyncs
+wait_for_vsync_loop:
+                cmp num_vsyncs
+                beq wait_for_vsync_loop
+                dex
+                bne wait_for_n_vsyncs_loop
+
+                .if visible_timing
+                lda #mode2_palette_entry(0,2)
+                sta video_ula_palette
+                .endif
+
+                ply             ; restore column_glyph_ptrs offset
+                plx             ; restore initial offset
                 
                 ; store LSBs
                 lda 0,x
@@ -222,41 +280,8 @@ scroll:
 
 got_glyph_ptrs_offset:
 
-                tya
-                tax
-                
-                .for column in range(num_columns)
-                lda column_glyph_ptrs_lsb,x ; LSB
-                sta column_glyph_ptr+0
-                lda column_glyph_ptrs_msb,x
-                sta column_glyph_ptr+1
-                inx
-
-                ldy #0
-                .for row in range(16)
-                lda (column_glyph_ptr),y
-                iny
-                sta $6700+(column%40)*8+(column/40)*640+(row/8)*320+(row%8)
-                .endfor
-                .endfor
-
-                ; lda #mode2_palette_entry(0,1)
-                ; sta video_ula_palette
-
-                ldx #20
-wait_for_n_vsyncs_loop:
-                lda num_vsyncs
-wait_for_vsync_loop:
-                cmp num_vsyncs
-                beq wait_for_vsync_loop
-                dex
-                bne wait_for_n_vsyncs_loop
-
-                ; lda #mode2_palette_entry(0,0)
-                ; sta video_ula_palette
-
                 inc num_frames
-                
+
                 rts
                 
 ;-------------------------------------------------------------------------
