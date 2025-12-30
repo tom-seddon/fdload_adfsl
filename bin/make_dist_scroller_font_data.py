@@ -160,129 +160,52 @@ def main2(options):
 
     pv('Used chars: %s\n'%('; '.join([get_char_description(c) for c in glyph_index_by_char.keys()])))
     # pv('Used char pairs: %s\n'%list(used_char_pairs))
-
-    # num_bytes=0
-    # num_bytes+=(font.glyph_size.y*
-    #             (font.glyph_size.x//2)*
-    #             len(used_chars)) # unshifted
-    # num_bytes+=(font.glyph_size.y*
-    #             (font.glyph_size.x//2-1)*
-    #             len(used_chars)) # unshifted
-    # # num_bytes+=(font.glyph_size.y*len(used_char_pairs))
-    # pv('Worst case total bytes: %d (0x%x)\n'%(num_bytes,num_bytes))
-
-    unshifted_data={}
-    shifted_data={}
-    #pairs_data={}
-
-    # def encode(left,right):
-    #     return encode_mode2(bbc_from_png[left],
-    #                         bbc_from_png[right])
-
-    for char in glyph_index_by_char.keys():
-        pos=font.glyphs_map[char]
-
-        num_columns=font.glyph_size.x//2
-
-        unshifted_columns=[]
-        for column_index in range(num_columns):
-            column=bytearray()
-            for y in range(font.glyph_size.y):
-                left=font.image[pos.y+y][pos.x+column_index*2+0]
-                right=font.image[pos.y+y][pos.x+column_index*2+1]
-
-                left=bbc_from_png[left]
-                right=bbc_from_png[right]
-
-                column.append(encode_mode2(left,right))
-
-            unshifted_columns.append(bytes(column))
-
-        shifted_columns=[]
-        for column_index in range(num_columns+1):
-            column=bytearray()
-            for y in range(font.glyph_size.y):
-                if column_index==0: left=0
-                else:
-                    left=font.image[pos.y+y][pos.x+column_index*2-1]
-                    left=bbc_from_png[left]
-
-                if x==num_columns: right=0
-                else:
-                    right=font.image[pos.y+y][pos.x+column_index*2+0]
-                    right=bbc_from_png[right]
-                
-                column.append(encode_mode2(left,right))
-
-            shifted_columns.append(bytes(column))
-
-        assert char not in shifted_data
-        shifted_data[char]=shifted_columns
-
-        assert char not in unshifted_data
-        unshifted_data[char]=unshifted_columns
-
-    # for pair in used_char_pairs:
-    #     pos0=font.glyphs_map[pair[0]]
-    #     pos1=font.glyphs_map[pair[1]]
-
-    #     column=bytearray()
-    #     for y in range(0,font.glyph_size.y):
-    #         left=font.image[pos0.y+y][pos0.x+font.glyph_size.x-1]
-    #         right=font.image[pos1.y+y][pos1.x]
-
-    #         left=bbc_from_png[left]
-    #         right=bbc_from_png[right]
-
-    #         column.append(encode(left,right))
-
-    #     column=bytes(column)
-    #     assert pair not in pairs_data
-    #     pairs_data[pair]=column
-
-    used_columns=set()
-    for columns in unshifted_data.values():
-        for column in columns: used_columns.add(column)
-    for columns in shifted_data.values():
-        for column in columns: used_columns.add(column)
-    # for column in pairs_data.values(): used_columns.add(column)
-
-    num_bytes=0
-    for used_column in used_columns:
-        assert len(used_column)==font.glyph_size.y
-        num_bytes+=len(used_column)
-
-    pv('Actual total bytes: %d (0x%x)\n'%(num_bytes,num_bytes))
     
     if options.output_glyph_s65 is not None:
         with output_text_file(options.output_glyph_s65) as f:
             f.write('; automatically generated output-glyph-s65 output. do not edit.\n')
             f.write('\n\n')
             for char,index in glyph_index_by_char.items():
-                assert char in shifted_data
-                assert char in unshifted_data
+                pos=font.glyphs_map[char]
+                
+                def get_column_name(column):
+                    return 'X' if column is None else str(column)
 
-                def write_column(name,column):
-                    f.write('    ; %s\n'%name)
+                def write_column(left_column,right_column):
+                    f.write('    ; %s+%s\n'%(get_column_name(left_column),
+                                             get_column_name(right_column)))
+
+                    bytes=[]
+                    for y in range(font.glyph_size.y):
+                        def get_bbc(x):
+                            if x is None: return 0
+                            else:
+                                value=font.image[pos.y+y][pos.x+x]
+                                value=bbc_from_png[value]
+                                return value
+
+                        bytes.append(encode_mode2(get_bbc(left_column),
+                                                  get_bbc(right_column)))
+                    
                     # TODO: actually, the 16th byte of the 2nd copy
                     # will never be used... and it can probably be
                     # eliminated? Offsets into this table will be
                     # generated sequentially.
                     for i in range(2):
                         f.write('    .byte %s\n'%
-                                (','.join(['$%02x'%byte for byte in column])))
+                                (','.join(['$%02x'%byte for byte in bytes])))
 
                 f.write('char%02x: .block\n'%index)
                 
-                write_column('X+0',shifted_data[char][0])
-                write_column('0+1',unshifted_data[char][0])
-                write_column('1+2',shifted_data[char][1])
-                write_column('2+3',unshifted_data[char][1])
-                write_column('3+4',shifted_data[char][2])
-                write_column('4+5',unshifted_data[char][2])
-                write_column('5+6',shifted_data[char][3])
-                write_column('6+7',unshifted_data[char][3])
-                write_column('7+X',shifted_data[char][4])
+                write_column(None,0)
+                write_column(0,1)
+                write_column(1,2)
+                write_column(2,3)
+                write_column(3,4)
+                write_column(4,5)
+                write_column(5,6)
+                write_column(6,7)
+                write_column(7,None)
                             
                 f.write('    .endblock\n')
 
