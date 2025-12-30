@@ -543,8 +543,10 @@ load_file_disk_data_routine: .block
 loop:
                 jsr file_read_next_track
                 bcs loop
-                
+
 done:
+                ; load file disk data only ever loads the data. it
+                ; ignores the execute flag.
                 rts
                 .endblock
 
@@ -569,9 +571,11 @@ load_file_contents_routine: .block
                 jsr fetch_caller_arg
                 sta ZX0_dst+0
                 sta read_byte_addr+0
+                sta jmp_load_address+1
                 jsr fetch_caller_arg
                 sta ZX0_dst+1
                 sta read_byte_addr+1
+                sta jmp_load_address+2
 
                 ; get buffer address MSB
                 jsr fetch_caller_arg
@@ -590,7 +594,7 @@ load_file_contents_routine: .block
 
                 ; check for compressed file. 
                 bit toc_entry.sector_and_flags
-                bpl load_file_disk_data_routine.loop
+                bpl load_uncompressed
 
                 ; indicate resumable operation
                 ldx #$80
@@ -634,18 +638,23 @@ loop:
                 bit ZX0_resume_state
                 bmi loop        ; taken if still more zx02 data
 
-                ; ; test both flags - (D)ata end and (F)ile end
-                ; rol a           ; ???????D
-                ; plp
-                ; rol a           ; ??????DF
-                
-                ; plx             ; restore buffer address MSB
-                
-                ; bit #3          ; test DF flags
-                ; beq loop
+maybe_execute:
+                ; if execute flag set, jump to the load address.
+                bit toc_entry.sector_and_flags
+                bvs execute
                 
 done:
                 rts
+
+load_uncompressed:
+                jsr load_file_disk_data_routine.loop
+                bra maybe_execute
+
+execute:
+                ldx #$ff
+                txs
+jmp_load_address: jmp $ffff
+
                 .endblock
 
 ;-------------------------------------------------------------------------

@@ -197,7 +197,9 @@ Once done with the disk, the fdload regions can be overwritten.
 *** $d80 - load file contents
 
 Load file's contents into memory. If compressed, it will be
-uncompressed.
+uncompressed. If the execute flag is set, its load address will be
+jumped to once loaded (meaning the file can be loaded on top of the
+caller).
 
 | Arg | Size | What                        |
 |-----+------+-----------------------------|

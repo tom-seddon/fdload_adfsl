@@ -33,10 +33,11 @@ ZX02CacheEntry=collections.namedtuple('ZX02CacheEntry',
 
 # TODO: could/should this be a dataclass?
 class File:
-    def __init__(self,path,ident,compressed=False):
+    def __init__(self,path,ident,compressed=False,execute=False):
         self._path=path
         self._ident=ident
         self._compressed=compressed
+        self._execute=execute
         self._options=None
         self._disk_data=None    # may be compressed
         self._memory_data=None
@@ -49,6 +50,9 @@ class File:
 
     @property
     def compressed(self): return self._compressed
+
+    @property
+    def execute(self): return self._execute
 
     def set_options(self,options):
         assert self._options is None
@@ -341,6 +345,7 @@ def build_fdload_data_cmd(files,options):
         assert entry.sector>=0 and entry.sector<16
         flags_and_sector|=entry.sector
         if entry.file.compressed: flags_and_sector|=0x80
+        if entry.file.execute: flags_and_sector|=0x40
         toc_binary.append(flags_and_sector)
 
         toc_binary.append(-entry.num_bytes&0xff)
