@@ -973,5 +973,93 @@ https://discord.com/channels/1256614067070828615/1265647001014374412
 |  39 |       |
 
 
+* can BRK work?
+
+BRK handler code.
+
+If bit 7 is clear in all of $2a1...$2b0, none of the ROM entry points
+will be called, and it'll all hang together just about well enough to
+fall through to the =jmp (BRKV)=. Maybe.
+
+Since $F4 isn't getting updated, any ROM/paging info will be lost.
+
+
+
+#+begin_example
+.e59e						irqEntryPoint:
+.e59e		85 fc		sta $fc		                sta TEMPA
+.e5a0		68		pla		                pla                          ;restore P
+.e5a1		48		pha		                pha                          ;save P
+.e5a2		29 10		and #$10	                and #$10
+.e5a4		d0 03		bne $e5a9	                bne brkEntryPoint
+.e5a9						brkEntryPoint:
+.e5a9		da		phx		                phx
+.e5aa		ba		tsx		                tsx
+.e5ab		bd 03 01	lda $0103,x	                lda $0103,x                  ;get BRK address+1 LSB
+.e5ae		d8		cld		                cld                          ;
+.e5af		38		sec		                sec                          ;
+.e5b0		e9 01		sbc #$01	                sbc #$01                     ;get BRK address LSB
+.e5b2		85 fd		sta $fd		                sta errPtr+0
+.e5b4		bd 04 01	lda $0104,x	                lda $0104,x                  ;get BRK address+1 MSB
+.e5b7		e9 00		sbc #$00	                sbc #$00                     ;get BRK address MSB
+.e5b9		85 fe		sta $fe		                sta errPtr+1
+.e5bb		a5 f4		lda $f4		                lda $F4
+.e5bd		8d 4a 02	sta $024a	                sta romActiveAtLastBRK
+.e5c0		86 f0		stx $f0		                stx originalX
+.e5c2		a2 06		ldx #$06	                ldx #romServiceCallBreakInstruction
+.e5c4		20 72 ee	jsr $ee72	                jsr makeROMServiceCall
+.e5c7		ae 8c 02	ldx $028c	                ldx currentLanguageROM
+.e5ca		20 81 e5	jsr $e581	                jsr selectROMX
+.e5cd		fa		plx		                plx
+.e5ce		a5 fc		lda $fc		                lda TEMPA
+.e5d0		58		cli		                cli
+.e5d1		6c 02 02	jmp ($0202)	                jmp (BRKV)
+
+.ee72						makeROMServiceCall: .proc                    ;ee72
+.ee72		a5 f4		lda $f4		                lda $F4         ; Save current ROM
+.ee74		48		pha		                pha
+.ee75		ad 34 fe	lda $fe34	                lda ACCCON      ; Save current paging state
+.ee78		48		pha		                pha
+.ee79		20 ba ed	jsr $edba	                jsr selectHAZEL ; Page in Hazel
+.ee7c		8a		txa		                txa             ; Pass service call number to A
+.ee7d		a2 0f		ldx #$0f	                ldx #$0F     ; Start at ROM 15, and always call ROM 15
+.ee7f		80 05		bra $ee86	                bra callServiceEntry
+.ee81						callServiceEntriesLoop:
+.ee81		3c a1 02	bit $02a1,x	                bit romInformationTable,x ;check if ROM X has a service entry
+.ee84		10 0b		bpl $ee91	                bpl nextROM       ;branch taken if no service entry
+.ee86						callServiceEntry:
+.ee86		20 81 e5	jsr $e581	                jsr selectROMX  ; Page in ROM X
+.ee89		20 03 80	jsr $8003	                jsr $8003       ; Call ROM service entry point
+.ee8c		aa		tax		                tax             ; X = service call result
+.ee8d		f0 05		beq $ee94	                beq done       ;branch taken if service call claimed
+.ee8f		a6 f4		ldx $f4		                ldx $F4         ; Get ROM number
+.ee91						nextROM:
+.ee91		ca		dex		                dex       ; Step down to next ROM, loop until all done
+.ee92		10 ed		bpl $ee81	                bpl callServiceEntriesLoop
+
+.ee94						done:
+.ee94		68		pla		                pla                          ; Restore paging state
+.ee95		20 b0 ed	jsr $edb0	                jsr selectMOSOrHAZEL
+.ee98		68		pla		                pla                          ; Restore current ROM
+.ee99		20 92 e5	jsr $e592	                jsr selectROMA
+.ee9c		8a		txa		                txa                          ; Pass claim/noclaim to A
+.ee9d		60		rts		                rts
+						                .pend
+
+.e581						selectROMX:   ;e581
+.e581		86 f4		stx $f4		                stx $F4
+.e583		8e 30 fe	stx $fe30	                stx ROMSEL
+.e586		60		rts		                rts
+
+.e592		85 f4		sta $f4		                sta $F4         ;update ROMSEL copy
+.e594		8d 30 fe	sta $fe30	                sta ROMSEL
+.e597		60		rts		                rts
+
+.edba						selectHAZEL:
+.edba		a9 08		lda #$08	                lda #ACCCON.Y
+.edbc						setACCCONBits:
+.edbc		0c 34 fe	tsb $fe34	                tsb ACCCON      ;page in HAZEL at $c000
+.edbf		60		rts		                rts
+#+end_example
 
 * eof
