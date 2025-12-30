@@ -122,7 +122,7 @@ def main2(options):
 
     scroll_data=['DISTORTION SCROLLER PROTOTYPE']
 
-    png_path='tests/geebeeyay_8x16.png'
+    png_path=os.path.join(options.root_path,'tests/geebeeyay_8x16.png')
     font=load_font(png_path,
                    glyph_size=V2(8,16),
                    first_glyph=32)
@@ -175,9 +175,9 @@ def main2(options):
     shifted_data={}
     #pairs_data={}
 
-    def encode(left,right):
-        return encode_mode2(bbc_from_png[left],
-                            bbc_from_png[right])
+    # def encode(left,right):
+    #     return encode_mode2(bbc_from_png[left],
+    #                         bbc_from_png[right])
 
     for char in glyph_index_by_char.keys():
         pos=font.glyphs_map[char]
@@ -191,21 +191,28 @@ def main2(options):
                 left=font.image[pos.y+y][pos.x+column_index*2+0]
                 right=font.image[pos.y+y][pos.x+column_index*2+1]
 
-                column.append(encode(left,right))
+                left=bbc_from_png[left]
+                right=bbc_from_png[right]
+
+                column.append(encode_mode2(left,right))
 
             unshifted_columns.append(bytes(column))
 
         shifted_columns=[]
-        for x in range(num_columns+1):
+        for column_index in range(num_columns+1):
             column=bytearray()
             for y in range(font.glyph_size.y):
-                if x==0: left=png_background
-                else: left=font.image[pos.y+y][pos.x+column_index*2+1]
+                if column_index==0: left=0
+                else:
+                    left=font.image[pos.y+y][pos.x+column_index*2-1]
+                    left=bbc_from_png[left]
 
-                if x==num_columns: right=png_background
-                else: right=font.image[pos.y+y][pos.x+column_index*2]
+                if x==num_columns: right=0
+                else:
+                    right=font.image[pos.y+y][pos.x+column_index*2+0]
+                    right=bbc_from_png[right]
                 
-                column.append(encode(left,right))
+                column.append(encode_mode2(left,right))
 
             shifted_columns.append(bytes(column))
 
@@ -255,19 +262,32 @@ def main2(options):
                 assert char in shifted_data
                 assert char in unshifted_data
 
-                def write_columns(columns):
-                    for column_index,column in enumerate(columns):
-                        f.write('    .byte %s ; column %d\n'%
-                                (','.join(['$%02x'%byte for byte in column]),
-                                 column_index))
-                            
+                def write_column(name,column):
+                    f.write('    ; %s\n'%name)
+                    # TODO: actually, the 16th byte of the 2nd copy
+                    # will never be used... and it can probably be
+                    # eliminated? Offsets into this table will be
+                    # generated sequentially.
+                    for i in range(2):
+                        f.write('    .byte %s\n'%
+                                (','.join(['$%02x'%byte for byte in column])))
+
                 f.write('char%02x: .block\n'%index)
-                f.write('    ; %s\n'%get_char_description(char))
-                f.write('unshifted:\n')
-                write_columns(unshifted_data[char])
-                f.write('shifted:\n')
-                write_columns(shifted_data[char])
+                
+                write_column('X+0',shifted_data[char][0])
+                write_column('0+1',unshifted_data[char][0])
+                write_column('1+2',shifted_data[char][1])
+                write_column('2+3',unshifted_data[char][1])
+                write_column('3+4',shifted_data[char][2])
+                write_column('4+5',unshifted_data[char][2])
+                write_column('5+6',shifted_data[char][3])
+                write_column('6+7',unshifted_data[char][3])
+                write_column('7+X',shifted_data[char][4])
+                            
                 f.write('    .endblock\n')
+
+            if 32 in glyph_index_by_char:
+                f.write('char_blank_column=char%02x+32\n'%glyph_index_by_char[32])
 
     if options.output_text_s65 is not None:
         with output_text_file(options.output_text_s65) as f:
@@ -292,6 +312,7 @@ def main(argv):
     
     p=argparse.ArgumentParser()
     p.add_argument('-v','--verbose',action='store_true',help='''be more verbose''')
+    p.add_argument('--root',metavar='FOLDER',dest='root_path',default='.',help='''treat %(metavar)s as root of project. Default: %(default)s''')
     p.add_argument('--output-glyph-s65',metavar='FILE',help='''write glyph data source code to %(metavar)s (specify - for stdout)''')
     p.add_argument('--output-text-s65',metavar='FILE',help='''write scroll text data to %(metavar)s (specify - for stdout)''')
 

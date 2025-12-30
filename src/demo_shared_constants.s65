@@ -34,6 +34,9 @@ reserved_zp_begin=$e0
 demo_scroller0_begin=$8000
 demo_scroller0_end=$c000
 
+demo_scroller1_begin=$1000
+demo_scroller1_end=$5800
+                
 ;-------------------------------------------------------------------------
 
                 .include "../build/demo_disk_files.generated.s65"

@@ -10,6 +10,10 @@ def make_files_list():
     files=[]
 
     files.append(boot_builder.File(path='build/demo_scroller0.bin',
-                                   ident='scroller0_bin'))
+                                   ident='scroller0_bin',
+                                   execute=True))
+    files.append(boot_builder.File(path='build/demo_scroller1.bin',
+                                   ident='scroller1_bin',
+                                   execute=True))
 
     return files

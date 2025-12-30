@@ -1,0 +1,342 @@
+                .include "../submodules/beeb/include/beeb.s65"
+                .include "demo_shared_constants.s65"
+
+;-------------------------------------------------------------------------
+
+*=$00
+                .dsection zp
+                .cerror *>reserved_zp_begin
+
+;-------------------------------------------------------------------------
+
+*=$300
+                .dsection workspace
+                .cerror *>demo_scroller1_begin
+                
+;-------------------------------------------------------------------------
+
+*=demo_scroller1_begin
+                .dsection code
+                .cerror *>demo_scroller1_end
+
+;-------------------------------------------------------------------------
+
+mode2_palette_entry: .function _logical,_physical
+                .cerror !((_logical)>=0&&(_logical)<16)
+                .cerror !((_physical)>=0&&(_physical)<16)
+                .endfunction ((_logical)<<4)|((_physical)^7)
+
+;-------------------------------------------------------------------------
+
+                .section zp
+glyph_ptr: .fill 2
+last_glyph_ptr: .fill 2
+glyph_column: .fill 1
+text_ptr: .fill 2
+next_dynamic_glyph_column: .fill 1
+dynamic_glyph_column_ptr: .fill 2
+glyph_column_counter: .fill 1
+num_frames: .fill 1
+glyph_ptrs_offset: .fill 1
+column_glyph_ptr: .fill 2
+num_vsyncs: .fill 1
+                .endsection zp
+
+;-------------------------------------------------------------------------
+
+num_columns=48
+                
+                .section workspace
+column_glyph_ptrs_lsb:
+                .fill 2*num_columns ; frame 0 LSBs
+                .fill 2*num_columns ; frame 1 LSBs
+                .cerror *-column_glyph_ptrs_lsb>=256
+column_glyph_ptrs_msb:
+                .fill 2*num_columns ; frame 0 MSBs
+                .fill 2*num_columns ; frame 1 MSBs
+
+                ; TODO: doesn't have to be num_columns...
+dynamic_glyph_columns: .fill num_columns*32
+                .endsection
+
+;-------------------------------------------------------------------------
+
+                .section code
+start:
+                ldx #13
+init_crtc_loop:
+                stx $fe00
+                lda mode5_crtc,x
+                sta $fe01
+                dex
+                bpl init_crtc_loop
+                
+                ldx #15
+init_palette_loop:
+                lda mode2_palette,x
+                sta video_ula_palette
+                dex
+                bpl init_palette_loop
+
+                stz video_ula_control ; Mode 8
+
+                lda #$80|VIAIRQ.ca1
+                sta system_via.ier
+
+                ldx #<handle_irq
+                ldy #>handle_irq
+                jsr irq_copy_handler
+
+                ldx #0
+init_zp_loop:
+                stz 0,x
+                inx
+                cpx #reserved_zp_begin
+                bne init_zp_loop
+
+                ldx #2*2*num_columns
+init_column_glyph_ptrs_loop:
+                lda #<char_blank_column
+                sta column_glyph_ptrs_lsb-1,x
+                sta last_glyph_ptr+0
+                lda #>char_blank_column
+                sta column_glyph_ptrs_msb-1,x
+                sta last_glyph_ptr+1
+                dex
+                bne init_column_glyph_ptrs_loop
+
+                jsr reset_text_ptr
+
+                jsr reset_dynamic_glyph_column_ptr
+
+loop_one_char:
+                jsr fetch_glyph_ptr
+
+                ; (last_glyph_ptr) points to the last column.
+                ldy #31
+merge_columns_loop:
+                lda (last_glyph_ptr),y ; left pixel
+                ora (glyph_ptr),y      ; right pixel
+                sta (dynamic_glyph_column_ptr),y
+                dey
+                bpl merge_columns_loop
+
+                ldx #dynamic_glyph_column_ptr
+                jsr scroll
+
+                lda #7
+                sta glyph_column_counter
+
+                ; enter mid-loop. don't draw column 0 shifted. do
+                ; increment again after drawing columns 6+7 unshifted,
+                ; so that glyph_ptr points to column 7 shifted for
+                ; merging into the next glyph.
+                bra next_glyph_ptr
+                
+scroll_loop:
+                ldx #glyph_ptr
+                jsr scroll
+next_glyph_ptr:
+                lda glyph_ptr+0
+                clc
+                adc #32
+                sta glyph_ptr+0
+                bcc +
+                inc glyph_ptr+1
++
+
+                dec glyph_column_counter
+                bpl scroll_loop
+
+                ; save pointer to column N-1 shifted.
+                lda glyph_ptr+0
+                sta last_glyph_ptr+0
+                lda glyph_ptr+1
+                sta last_glyph_ptr+1
+
+                ; advance to next dynamic glyph column
+                lda next_dynamic_glyph_column
+                inc a
+                cmp #num_columns
+                bcc advance_dynamic_glyph_column_ptr
+
+                jsr reset_dynamic_glyph_column_ptr
+                bra got_dynamic_glyph_column
+
+advance_dynamic_glyph_column_ptr:
+                sta next_dynamic_glyph_column
+                clc
+                lda dynamic_glyph_column_ptr+0
+                adc #32
+                sta dynamic_glyph_column_ptr+0
+                bcc +
+                inc dynamic_glyph_column_ptr+1
++
+                
+got_dynamic_glyph_column:
+                jmp loop_one_char
+
+;-------------------------------------------------------------------------
+
+scroll:
+                ; select frame0 or frame1 tables.
+                lda num_frames
+                and #1
+                beq +                ; taken if frame0 table
+                lda #2*num_columns ; select frame1 table
++
+
+                ; apply offset.
+                clc
+                adc glyph_ptrs_offset
+                tay
+                
+                ; store LSBs
+                lda 0,x
+                sta column_glyph_ptrs_lsb+0,y
+                sta column_glyph_ptrs_lsb+num_columns,y
+
+                ; store MSBs
+                lda 1,x
+                sta column_glyph_ptrs_msb+0,y
+                sta column_glyph_ptrs_msb+num_columns,y
+
+                ; advance offset?
+                lda num_frames
+                and #1
+                beq got_glyph_ptrs_offset
+
+                ; advance offset.
+                lda glyph_ptrs_offset
+                inc a
+                cmp #num_columns
+                bcc +
+                lda #0
++
+                sta glyph_ptrs_offset
+
+                ; and bump the corresponding register too. the buffer
+                ; is sized and updated for two full copies, so if
+                ; Y=num_columns then it's not actually a problem.
+                iny
+
+got_glyph_ptrs_offset:
+
+                tya
+                tax
+                
+                .for column in range(num_columns)
+                lda column_glyph_ptrs_lsb,x ; LSB
+                sta column_glyph_ptr+0
+                lda column_glyph_ptrs_msb,x
+                sta column_glyph_ptr+1
+                inx
+
+                ldy #0
+                .for row in range(16)
+                lda (column_glyph_ptr),y
+                iny
+                sta $6700+(column%40)*8+(column/40)*640+(row/8)*320+(row%8)
+                .endfor
+                .endfor
+
+                ; lda #mode2_palette_entry(0,1)
+                ; sta video_ula_palette
+
+                ldx #20
+wait_for_n_vsyncs_loop:
+                lda num_vsyncs
+wait_for_vsync_loop:
+                cmp num_vsyncs
+                beq wait_for_vsync_loop
+                dex
+                bne wait_for_n_vsyncs_loop
+
+                ; lda #mode2_palette_entry(0,0)
+                ; sta video_ula_palette
+
+                inc num_frames
+                
+                rts
+                
+;-------------------------------------------------------------------------
+
+reset_dynamic_glyph_column_ptr:
+                stz next_dynamic_glyph_column
+                
+                lda #<dynamic_glyph_columns
+                sta dynamic_glyph_column_ptr+0
+                lda #>dynamic_glyph_columns
+                sta dynamic_glyph_column_ptr+1
+
+                rts
+                
+;-------------------------------------------------------------------------
+
+; fetch pointer to next glyph. update text_ptr as required.
+;
+; preserves: X
+fetch_glyph_ptr:
+                lda (text_ptr)
+                sta glyph_ptr+0
+                ldy #1
+                lda (text_ptr),y
+                sta glyph_ptr+1
+
+                ; post increment
+                clc
+                lda text_ptr+0
+                adc #2
+                sta text_ptr+0
+                bcc got_text_ptr
+                inc text_ptr+1
+got_text_ptr:
+                lda (text_ptr)
+                ora (text_ptr),y
+                bne done
+reset_text_ptr:
+                lda #<scroll_text
+                sta text_ptr+0
+                lda #>scroll_text
+                sta text_ptr+1
+done:
+                rts
+
+;-------------------------------------------------------------------------
+
+handle_irq:
+                lda system_via.ifr
+                bpl +
+                sta system_via.ifr
+                bit #VIAIRQ.ca1
+                beq +
+                inc num_vsyncs
++
+                lda $fc
+                rti
+                
+;-------------------------------------------------------------------------
+
+mode5_crtc:
+                ;     R0  R1  R2  R3  R4  R5  R6  R7
+                .byte $3f,$28,$31,$24,$26,$00,$20,$22
+                ;     R8  R9  R10 R11
+                .byte $00,$07,$67,$08
+                .byte >($5800>>3) ; R12
+                .byte <($5800>>3) ; R13
+                
+;-------------------------------------------------------------------------
+
+mode2_palette:
+                .for _i:=0,_i<16,_i+=1
+                .byte mode2_palette_entry(_i,_i&7)
+                .endfor
+
+;-------------------------------------------------------------------------
+
+                .include "../build/dist_scroller.text.generated.s65"
+                .include "../build/dist_scroller.glyphs.generated.s65"
+
+;-------------------------------------------------------------------------
+
+                .endsection code
