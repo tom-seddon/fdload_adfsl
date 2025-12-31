@@ -11,9 +11,11 @@ def make_files_list():
 
     files.append(boot_builder.File(path='build/demo_scroller0.bin',
                                    ident='scroller0_bin',
-                                   execute=True))
+                                   execute=True,
+                                   compressed=True))
     files.append(boot_builder.File(path='build/demo_scroller1.bin',
                                    ident='scroller1_bin',
-                                   execute=True))
+                                   execute=True,
+                                   compressed=True))
 
     return files

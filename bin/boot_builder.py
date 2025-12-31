@@ -31,6 +31,10 @@ def save_file(path,data):
 ZX02CacheEntry=collections.namedtuple('ZX02CacheEntry',
                                       'u_data u_hash u_path c_folder c_path')
 
+def get_zx02_q_arg(options):
+    if options.zx02_quick: return '-q'
+    else: return ''
+
 # TODO: could/should this be a dataclass?
 class File:
     def __init__(self,path,ident,compressed=False,execute=False):
@@ -85,6 +89,7 @@ class File:
                 if not os.path.isfile(ent.c_path):
                     makedirs(ent.c_folder)
                     argv=[self._options.g_zx02_path,
+                          get_zx02_q_arg(self._options),
                           ent.u_path,
                           ent.c_path]
                     subprocess.run(argv,check=True)
@@ -117,10 +122,13 @@ def warm_zx02_cache_cmd(files,options):
 
             # qnd $ quoting for GNU Make purposes.
             quoted_u_path=ent.u_path.replace('$','$$')
-            f.write('\t@"%s" "%s" "%s" > "%s"\n'%(options.g_zx02_path,
-                                               quoted_u_path,
-                                               ent.c_path,
-                                               '%s.txt'%ent.c_path))
+            f.write('\t@"%s" %s "%s" "%s" > "%s"\n'%
+                    (options.g_zx02_path,
+                     get_zx02_q_arg(options),
+                     quoted_u_path,
+                     ent.c_path,
+                     '%s.txt'%ent.c_path))
+
             makedirs(ent.c_folder)
             number+=1
 
@@ -461,6 +469,7 @@ def main(argv):
     # doesn't matter as it's easy to deal with from the Makefile.
     parser.add_argument('--zx02',metavar='PATH',dest='g_zx02_path',required=True,help='''treat %(metavar)s as path to zx02 binary''')
     parser.add_argument('--zx02-cache',metavar='PATH',dest='g_zx02_cache_path',required=True,help='''use %(metavar)s as zx02 cache path''')
+    parser.add_argument('--zx02-quick',action='store_true',help='''use zx02 quick non-optimal compression''')
 
     subparsers=parser.add_subparsers()
 

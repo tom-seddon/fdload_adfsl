@@ -63,6 +63,10 @@ endif
 
 BUILDER_ZX02_ARGS:=--zx02 "$(ZX02)" --zx02-cache "$(BUILD)/zx02_cache"
 
+ifdef ZX02_QUICK
+BUILDER_ZX02_ARGS:=$(BUILDER_ZX02_ARGS) --zx02-quick
+endif
+
 ##########################################################################
 ##########################################################################
 
@@ -109,7 +113,7 @@ endif
 	$(_V)$(MAKE) _asm PC=demo_scroller0 EXTRACT_PRG=1
 	$(_V)$(MAKE) _asm PC=demo_scroller1 EXTRACT_PRG=1
 
-# Warm up the ZX02 cache in parallel. 
+# Warm up the ZX02 cache in parallel.
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(TEST_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(PICS_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) warm-zx02-cache --make "$(MAKE)"
@@ -218,7 +222,7 @@ _tom_build_and_test: _DISK:=$(BUILD)/test_disk.adl
 _tom_build_and_test: _DISK:=$(BUILD)/pics_disk.adl
 _tom_build_and_test: _DISK:=$(BUILD)/demo_disk.adl
 _tom_build_and_test:
-	$(_V)$(MAKE) build
+	$(_V)$(MAKE) build ZX02_QUICK=1
 	curl --fail-with-body --connect-timeout 0.25 --silent 'http://localhost:48075/reset/b2' --data-urlencode "config=$(_CONFIG)"
 	curl --fail-with-body --connect-timeout 0.25 --silent -H 'Content-Type:application/binary' --upload-file '$(_DISK)' 'http://localhost:48075/mount/b2?drive=0&name=$(_DISK)'
 # (the pasting interferes with the FS boot key, so it ends up in ROM

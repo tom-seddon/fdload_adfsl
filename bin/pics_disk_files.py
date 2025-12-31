@@ -10,7 +10,8 @@ def make_files_list():
     drive1='''beeb/fdload_adfsl/1/'''
     files=[]
 
-    for i in range(222):
+    # with max compression, 222 files fit.
+    for i in range(200):
         files.append(boot_builder.File(path=os.path.join(drive1,'''$.SCREEN%d'''%i),
                                        ident='screen%d'%i,
                                        compressed=True))

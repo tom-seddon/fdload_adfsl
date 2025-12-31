@@ -121,6 +121,19 @@ The Makefile is intended to go roughly like this:
 8. =boot_builder build-disk-contents=, supplying assembled loader0 and
    loader1
 
+** Quick compression
+
+Supply =--zx02-quick= to =boot_builder= to have it run zx02 in quick
+mode, whether run on demand or as part of =warm-zx02-cache=. zx02
+quick mode is much faster, but the compression isn't as good.
+
+Files are found in the zx02 cache based on their uncompressed
+contents: only files that are changing from build to build need to get
+recompressed, and existing cache entries will be found however they
+were compressed. An occasional full rebuild without =--zx02-quick=
+will fill the cache with better-compressed copies of any files that
+aren't currently being iterated on.
+
 ** fdload
 
 Include in project's loader1. loader1 will have to do some stuff to
@@ -1061,5 +1074,13 @@ Since $F4 isn't getting updated, any ROM/paging info will be lost.
 .edbc		0c 34 fe	tsb $fe34	                tsb ACCCON      ;page in HAZEL at $c000
 .edbf		60		rts		                rts
 #+end_example
+
+* jsbeeb links
+
+https://bbc.godbolt.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/demo_disk.adl&autoboot&model=MasterADFS
+
+
+
+tom-seddon/256_bytes/07ac8a22e7e917a5683d4635d65935bbe0b07972/nova_2023/sotc.ssd&autoboot&model=Master
 
 * eof
