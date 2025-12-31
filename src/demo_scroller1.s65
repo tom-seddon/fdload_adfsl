@@ -22,6 +22,8 @@ visible_timing=true
 
 *=demo_scroller1_begin
                 .dsection code
+                .align 8
+                .dsection display_buffers
                 .cerror *>demo_scroller1_end
 
 ;-------------------------------------------------------------------------
@@ -38,7 +40,6 @@ glyph_ptr: .fill 2
 last_glyph_ptr: .fill 2
 glyph_column: .fill 1
 text_ptr: .fill 2
-next_dynamic_glyph_column: .fill 1
 dynamic_glyph_column_ptr: .fill 2
 glyph_column_counter: .fill 1
 num_frames: .fill 1
@@ -51,6 +52,11 @@ y_offset_ptr: .fill 2
 ;-------------------------------------------------------------------------
 
 num_columns=48
+glyph_width_columns=4
+glyph_height=16
+glyph_column_size=2*glyph_height
+char_row_height=4
+display_buffer_size=num_columns*8*(glyph_height/char_row_height)
                 
                 .section workspace
 column_glyph_ptrs_lsb:
@@ -61,8 +67,17 @@ column_glyph_ptrs_msb:
                 .fill 2*num_columns ; frame 0 MSBs
                 .fill 2*num_columns ; frame 1 MSBs
 
-                ; TODO: doesn't have to be num_columns...
-dynamic_glyph_columns: .fill num_columns*32
+num_dynamic_glyph_columns=num_columns/glyph_width_columns+1
+dynamic_glyph_columns: .fill num_dynamic_glyph_columns*glyph_column_size
+dynamic_glyph_columns_end:
+                .endsection
+
+                .section display_buffers
+display_buffers: .block
+a: .fill display_buffer_size
+b: .fill display_buffer_size
+c: .fill display_buffer_size
+                .endblock
                 .endsection
 
 ;-------------------------------------------------------------------------
@@ -155,7 +170,7 @@ scroll_loop:
 next_glyph_ptr:
                 lda glyph_ptr+0
                 clc
-                adc #32
+                adc #glyph_column_size
                 sta glyph_ptr+0
                 bcc +
                 inc glyph_ptr+1
@@ -170,24 +185,20 @@ next_glyph_ptr:
                 lda glyph_ptr+1
                 sta last_glyph_ptr+1
 
-                ; advance to next dynamic glyph column
-                lda next_dynamic_glyph_column
-                inc a
-                cmp #num_columns
-                bcc advance_dynamic_glyph_column_ptr
-
-                jsr reset_dynamic_glyph_column_ptr
-                bra got_dynamic_glyph_column
-
-advance_dynamic_glyph_column_ptr:
-                sta next_dynamic_glyph_column
                 clc
                 lda dynamic_glyph_column_ptr+0
-                adc #32
+                adc #glyph_column_size
                 sta dynamic_glyph_column_ptr+0
                 bcc +
                 inc dynamic_glyph_column_ptr+1
 +
+                cmp #<dynamic_glyph_columns_end
+                bne got_dynamic_glyph_column
+                lda dynamic_glyph_column_ptr+1
+                cmp #>dynamic_glyph_columns_end
+                bne got_dynamic_glyph_column
+
+                jsr reset_dynamic_glyph_column_ptr
                 
 got_dynamic_glyph_column:
                 jmp loop_one_char
@@ -331,8 +342,6 @@ got_glyph_ptrs_offset:
 ;-------------------------------------------------------------------------
 
 reset_dynamic_glyph_column_ptr:
-                stz next_dynamic_glyph_column
-                
                 lda #<dynamic_glyph_columns
                 sta dynamic_glyph_column_ptr+0
                 lda #>dynamic_glyph_columns
