@@ -55,6 +55,7 @@ y_offset_ptr: .fill 2
 display_buffer_0_index: .fill 1
 display_buffer_1_index: .fill 1
 write_buffer_index: .fill 1
+x_offset_ptr: .fill 2
 
                 ; IRQ handler stuff
 irq_region: .fill 1
@@ -251,12 +252,13 @@ init_column_glyph_ptrs_loop:
                 jsr reset_text_ptr
                 jsr reset_dynamic_glyph_column_ptr
                 jsr reset_y_offset_ptr
+                jsr reset_x_offset_ptr
 
                 ; Set up system VIA.
 
                 ldx #<handle_irq
                 ldy #>handle_irq
-                jsr irq_copy_handler
+                jsr irq_set_handler
 
                 .if ordinary_display
 
@@ -342,25 +344,47 @@ handle_irq: .block
 done:
 prepare_nth:
                 stx reldx+1
+                sty reldy+1
 
-                ldx irq_region
-                inx
-                stx irq_region
-                
+                ldy irq_region
+                iny
+                sty irq_region
+
                 lda #13
                 sta $fe00
-                clc
-                lda irq_crtc_base+0
-                adc crtc_row_offsets,x
-                sta $fe01
                 
+                lda (x_offset_ptr),y
+                lsr a           ; A=X offset; C=buffer index
+                ldx display_buffer_0_index
+                bcc +
+                ldx display_buffer_1_index
++
+                clc
+                adc buffer_infos+BufferInfo.crtc_address+0,x ; no carry
+                adc crtc_row_offsets,y ; possible carry
+                sta $fe01
+
                 lda #12
                 sta $fe00
                 lda #0
-                adc irq_crtc_base+1
+                adc buffer_infos+BufferInfo.crtc_address+1,x
                 sta $fe01
+                
+                ; lda #13
+                ; sta $fe00
+                ; clc
+                ; lda irq_crtc_base+0
+                ; adc crtc_row_offsets,
+                ; sta $fe01
+                
+                ; lda #12
+                ; sta $fe00
+                ; lda #0
+                ; adc irq_crtc_base+1
+                ; sta $fe01
 
 reldx: ldx #$ff
+reldy: ldy #$ff
                 lda $fc
                 rti                
 
@@ -417,7 +441,7 @@ handle_penultimate_prepare_last:
                 .endblock
                 .endif
                 
-                .cerror size(handle_irq)>size(irq_handler_space)
+                ;.cerror size(handle_irq)>size(irq_handler_space)
                 
 ;-------------------------------------------------------------------------
 
@@ -560,6 +584,8 @@ wait_for_vsync_loop:
                 jsr next_y_offset_ptr
                 jsr next_y_offset_ptr
 
+                jsr next_x_offset_ptr
+
 got_glyph_ptrs_offset:
 
                 inc num_frames
@@ -610,6 +636,30 @@ reset_dynamic_glyph_column_ptr:
 
 ;-------------------------------------------------------------------------
 
+next_x_offset_ptr: .block
+x_sines_end=x_sines+x_sines_size
+
+                inc x_offset_ptr+0
+                bne +
+                inc x_offset_ptr+1
++
+                lda x_offset_ptr+0
+                cmp #<x_sines_end
+                bne reset_x_offset_ptr.done
+                lda x_offset_ptr+1
+                cmp #>x_sines_end
+                bne reset_x_offset_ptr.done
+                .cerror *!=reset_x_offset_ptr
+                .endblock
+reset_x_offset_ptr: .block
+                lda #<x_sines
+                sta x_offset_ptr+0
+                lda #>x_sines
+                sta x_offset_ptr+1
+done:
+                rts
+                .endblock
+                
 next_y_offset_ptr: .block
 y_sines_end=y_sines+y_sines_size
                 
@@ -702,6 +752,16 @@ y_sines:
                 .bfor i in range(y_sines_size+num_columns)
 theta=float(i)/y_sines_size*2*pi
                 .byte floor(16+sin(theta)*16)%16
+                .endfor
+
+;-------------------------------------------------------------------------
+
+x_sines_size=101
+x_sines:
+                .bfor i in range(x_sines_size+num_visible_rows*2)
+theta=float(i)/x_sines_size*2*pi
+x_=8+floor(sin(theta)*8)
+                .byte x_
                 .endfor
 
 ;-------------------------------------------------------------------------
