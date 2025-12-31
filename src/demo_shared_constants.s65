@@ -35,7 +35,8 @@ demo_scroller0_begin=$8000
 demo_scroller0_end=$c000
 
 demo_scroller1_begin=$1000
-demo_scroller1_end=$5800
+                ; might run into sideways RAM. it's fine.
+demo_scroller1_end=$c000
                 
 ;-------------------------------------------------------------------------
 

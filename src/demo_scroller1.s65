@@ -3,9 +3,12 @@
 
 ;-------------------------------------------------------------------------
 
-; if set, show timing using palette switches.
+; if true, show timing using palette switches.
 visible_timing=true
 
+; if true, just have ordinary display with no funny business.
+ordinary_display=false
+                
 ;-------------------------------------------------------------------------
 
 *=$00
@@ -22,8 +25,10 @@ visible_timing=true
 
 *=demo_scroller1_begin
                 .dsection code
-                .align 8
+                .align 8*8
                 .dsection display_buffers
+                .cerror *>$8000
+                .dsection unrolls
                 .cerror *>demo_scroller1_end
 
 ;-------------------------------------------------------------------------
@@ -47,10 +52,38 @@ glyph_ptrs_offset: .fill 1
 column_glyph_ptr: .fill 2
 num_vsyncs: .fill 1
 y_offset_ptr: .fill 2
+display_buffer_0_index: .fill 1
+display_buffer_1_index: .fill 1
+write_buffer_index: .fill 1
+
+                ; IRQ handler stuff
+irq_region: .fill 1
+irq_crtc_base: .fill 2
                 .endsection zp
+
 
 ;-------------------------------------------------------------------------
 
+; Display setup.
+                
+; 8 scanlines = "row"
+; 4 scanlines = "half row"
+;
+; these units are stupid, but it simplifies the calculations a little
+; bit.
+                
+initial_t1_value=40*64-128
+t1_value_1_half_row=1*4*64-2
+num_visible_rows=20
+vsync_row=34
+total_num_rows=39
+t1_value_8_rows=(total_num_rows-(num_visible_rows-1))*8*64-2
+                .cerror t1_value_8_rows>=65536
+                
+;-------------------------------------------------------------------------
+
+; Display buffer setup.
+                
 num_columns=48
 glyph_width_columns=4
 glyph_height=16
@@ -73,6 +106,9 @@ dynamic_glyph_columns_end:
                 .endsection
 
                 .section display_buffers
+                ; ensure bottom 3 bits of CRTC address will be 0.
+                .cerror display_buffer_size%(8*8)!=0
+                .cerror *%(8*8)!=0
 display_buffers: .block
 a: .fill display_buffer_size
 b: .fill display_buffer_size
@@ -84,61 +120,7 @@ c: .fill display_buffer_size
 
                 .section code
 start:
-                ldx #13
-init_crtc_loop:
-                stx $fe00
-                lda mode5_crtc,x
-                sta $fe01
-                dex
-                bpl init_crtc_loop
-                
-                ldx #15
-init_palette_loop:
-                lda mode2_palette,x
-                sta video_ula_palette
-                dex
-                bpl init_palette_loop
-
-                ldx #0
-clear_memory_loop:
-clear_memory_store: stz $5800,x
-                inx
-                bne clear_memory_loop
-                inc clear_memory_store+2
-                bpl clear_memory_loop
-
-                stz video_ula_control ; Mode 8
-
-                lda #$80|VIAIRQ.ca1
-                sta system_via.ier
-
-                ldx #<handle_irq
-                ldy #>handle_irq
-                jsr irq_copy_handler
-
-                ldx #0
-init_zp_loop:
-                stz 0,x
-                inx
-                cpx #reserved_zp_begin
-                bne init_zp_loop
-
-                ldx #2*2*num_columns
-init_column_glyph_ptrs_loop:
-                lda #<char_blank_column
-                sta column_glyph_ptrs_lsb-1,x
-                sta last_glyph_ptr+0
-                lda #>char_blank_column
-                sta column_glyph_ptrs_msb-1,x
-                sta last_glyph_ptr+1
-                dex
-                bne init_column_glyph_ptrs_loop
-
-                jsr reset_text_ptr
-
-                jsr reset_dynamic_glyph_column_ptr
-
-                jsr reset_y_offset_ptr
+                jsr init
 
 loop_one_char:
                 jsr fetch_glyph_ptr
@@ -205,6 +187,240 @@ got_dynamic_glyph_column:
 
 ;-------------------------------------------------------------------------
 
+init: .block
+                ; Initialise CRTC.
+                ldx #13
+init_crtc_loop:
+                stx $fe00
+                lda mode5_crtc,x
+                sta $fe01
+                dex
+                bpl init_crtc_loop
+
+                ; Initialise palette.
+                ldx #15
+init_palette_loop:
+                lda mode2_palette,x
+                sta video_ula_palette
+                dex
+                bpl init_palette_loop
+
+                ; Select Mode 8.
+                stz video_ula_control
+
+                .if ordinary_display
+                ; Clear memory.
+                ldx #0
+clear_memory_loop:
+clear_memory_store: stz $5800,x
+                inx
+                bne clear_memory_loop
+                inc clear_memory_store+2
+                bpl clear_memory_loop
+                .endif
+
+                ldx #0
+init_zp_loop:
+                stz 0,x
+                inx
+                cpx #reserved_zp_begin
+                bne init_zp_loop
+
+                lda #buffer_infos.a-buffer_infos
+                sta display_buffer_0_index
+                lda #buffer_infos.b-buffer_infos
+                sta display_buffer_1_index
+                lda #buffer_infos.c-buffer_infos
+                sta write_buffer_index
+
+                jsr update_irq_crtc_base
+               
+                ; Initialise glyph pointers table.
+                ldx #2*2*num_columns
+init_column_glyph_ptrs_loop:
+                lda #<char_blank_column
+                sta column_glyph_ptrs_lsb-1,x
+                sta last_glyph_ptr+0
+                lda #>char_blank_column
+                sta column_glyph_ptrs_msb-1,x
+                sta last_glyph_ptr+1
+                dex
+                bne init_column_glyph_ptrs_loop
+
+                ; Reset pointers.
+                jsr reset_text_ptr
+                jsr reset_dynamic_glyph_column_ptr
+                jsr reset_y_offset_ptr
+
+                ; Set up system VIA.
+
+                ldx #<handle_irq
+                ldy #>handle_irq
+                jsr irq_copy_handler
+
+                .if ordinary_display
+
+                ; enable vsync IRQ only.
+                lda #$80|VIAIRQ.ca1
+                sta system_via.ier
+
+                .else
+
+                lda #%01000000 ; VIA ACR - T1 continuous, T2 one-shot
+                sta system_via.acr
+
+                ; Vertical displayed=1
+                lda #6
+                sta $fe00
+                lda #1
+                sta $fe01
+
+                ; wait for vsync at scanline 274 or so.
+                lda #VIAIRQ.ca1
+                sta system_via.ifr
+wait_for_vsync_loop:
+                bit system_via.ifr
+                beq wait_for_vsync_loop
+
+                ; request IRQ at some point in row 0
+                lda #<initial_t1_value
+                sta system_via.t1l_l
+                lda #>initial_t1_value
+                sta system_via.t1c_h
+
+                ; enable timer IRQ.
+                lda #$80|VIAIRQ.t1
+                sta system_via.ier
+
+                ; Set up the latch for the subsequent timeout.
+                lda #<t1_value_1_half_row
+                sta system_via.t1l_l
+                lda #>t1_value_1_half_row
+                sta system_via.t1l_h
+                
+                ; Set up CRTC vsync row
+                lda #7
+                sta $fe00
+                lda #vsync_row-num_visible_rows
+                sta $fe01
+
+                .endif
+
+                rts
+                .endblock
+
+;-------------------------------------------------------------------------
+
+                .if ordinary_display
+                
+handle_irq: .block
+                lda system_via.ifr
+                bpl +
+                sta system_via.ifr
+                bit #VIAIRQ.ca1
+                beq +
+                inc num_vsyncs
++
+                lda $fc
+                rti
+                .endblock
+
+                .else
+                
+handle_irq: .block
+                ; there's only one source of IRQs here.
+                lda system_via.ifr
+                sta system_via.ifr ; acknowledge all
+
+                lda irq_region
+                beq handle_first_prepare_second
+                cmp #num_visible_rows*2-2
+                beq handle_penultimate_prepare_last
+                cmp #num_visible_rows*2-1
+                beq handle_last_prepare_first
+
+done:
+prepare_nth:
+                stx reldx+1
+
+                ldx irq_region
+                inx
+                stx irq_region
+                
+                lda #13
+                sta $fe00
+                clc
+                lda irq_crtc_base+0
+                adc crtc_row_offsets,x
+                sta $fe01
+                
+                lda #12
+                sta $fe00
+                lda #0
+                adc irq_crtc_base+1
+                sta $fe01
+
+reldx: ldx #$ff
+                lda $fc
+                rti                
+
+handle_first_prepare_second:
+                ; Scanlines per row=4
+                lda #9
+                sta $fe00
+                lda #3
+                sta $fe01
+
+                ; Vertical total=1
+                lda #4
+                sta $fe00
+                stz $fe01
+                bra done
+
+handle_last_prepare_first:
+                lda #<t1_value_1_half_row
+                sta system_via.t1l_l
+                lda #>t1_value_1_half_row
+                sta system_via.t1l_h
+
+                ; Scanlines per row=8
+                lda #9
+                sta $fe00
+                lda #7
+                sta $fe01
+
+                ; Vertical total=N
+                lda #4
+                sta $fe00
+                lda #total_num_rows-num_visible_rows
+                sta $fe01
+
+                ; the inc is inevitable, so ensure the value ends up
+                ; $00.
+                lda #$ff
+                sta irq_region
+
+                ; not actually the vsync, but it's close enough to
+                ; count.
+                inc num_vsyncs
+                
+                bra done
+
+handle_penultimate_prepare_last:
+                lda #<t1_value_8_rows
+                sta system_via.t1l_l
+                lda #>t1_value_8_rows
+                sta system_via.t1l_h
+
+                bra done
+                
+                .endblock
+                .endif
+                
+                .cerror size(handle_irq)>size(irq_handler_space)
+                
+;-------------------------------------------------------------------------
+
 scroll_unroll: .macro debug,dest
 
                 .for column in range(num_columns)
@@ -232,9 +448,9 @@ dest+=row%8
                 .else
 dest:=\dest
 dest+=column*8
-dest+=row/4*320
+dest+=row/4*(num_columns*8)
 dest+=row%4
-                .error
+                sta dest
                 .endif
                 .endfor
                 .endfor
@@ -242,7 +458,7 @@ dest+=row%4
                 
                 .endmacro
                 
-scroll:
+scroll: .block
                 phx             ; save initial offset
                 
                 ; select frame0 or frame1 tables.
@@ -257,9 +473,19 @@ scroll:
                 adc glyph_ptrs_offset
                 pha             ; save column_glyph_ptrs offset
 
-                tax
 
+                .if ordinary_display
+                
+                tax
                 .scroll_unroll true,$6700
+
+                .else
+
+                ldx write_buffer_index
+                jsr jmp_unroll
+                ; .scroll_unroll false,display_buffers.a
+
+                .endif
                 
                 ; .for column in range(num_columns)
                 ; lda column_glyph_ptrs_lsb,x ; LSB
@@ -332,10 +558,43 @@ wait_for_vsync_loop:
                 sta glyph_ptrs_offset
 
                 jsr next_y_offset_ptr
+                jsr next_y_offset_ptr
 
 got_glyph_ptrs_offset:
 
                 inc num_frames
+
+                ldx write_buffer_index
+
+                lda display_buffer_0_index
+                sta write_buffer_index
+
+                lda display_buffer_1_index
+                sta display_buffer_0_index
+
+                stx display_buffer_1_index
+
+                ; TODO - this is too late! The updated value needs to
+                ; be available in time for handle_last_prepare_first,
+                ; but that has already happened at this point. It was
+                ; what wait_for_vsync_loop above was waiting for.
+                jsr update_irq_crtc_base
+
+                rts
+
+jmp_unroll:
+                jmp (buffer_infos+BufferInfo.fill_routine,x)
+                .endblock
+
+;-------------------------------------------------------------------------
+
+update_irq_crtc_base:
+                ldx display_buffer_0_index
+
+                lda buffer_infos+BufferInfo.crtc_address+0,x
+                sta irq_crtc_base+0
+                lda buffer_infos+BufferInfo.crtc_address+1,x
+                sta irq_crtc_base+1
 
                 rts
                 
@@ -380,7 +639,7 @@ done:
 ; fetch pointer to next glyph. update text_ptr as required.
 ;
 ; preserves: X
-fetch_glyph_ptr:
+fetch_glyph_ptr: .block
                 lda (text_ptr)
                 sta glyph_ptr+0
                 ldy #1
@@ -397,28 +656,18 @@ fetch_glyph_ptr:
 got_text_ptr:
                 lda (text_ptr)
                 ora (text_ptr),y
-                bne done
-reset_text_ptr:
+                bne reset_text_ptr.done
+                .cerror *!=reset_text_ptr
+                .endblock
+reset_text_ptr: .block
                 lda #<scroll_text
                 sta text_ptr+0
                 lda #>scroll_text
                 sta text_ptr+1
 done:
                 rts
+                .endblock
 
-;-------------------------------------------------------------------------
-
-handle_irq:
-                lda system_via.ifr
-                bpl +
-                sta system_via.ifr
-                bit #VIAIRQ.ca1
-                beq +
-                inc num_vsyncs
-+
-                lda $fc
-                rti
-                
 ;-------------------------------------------------------------------------
 
 mode5_crtc:
@@ -426,8 +675,13 @@ mode5_crtc:
                 .byte $3f,$28,$31,$24,$26,$00,$20,$22
                 ;     R8  R9  R10 R11
                 .byte $00,$07,$67,$08
+                .if ordinary_display
                 .byte >($5800>>3) ; R12
                 .byte <($5800>>3) ; R13
+                .else
+                .byte >(display_buffers.a>>3)
+                .byte <(display_buffers.a>>3)
+                .endif
                 
 ;-------------------------------------------------------------------------
 
@@ -443,13 +697,59 @@ mode2_palette:
 
 ;-------------------------------------------------------------------------
 
-y_sines_size=300
+y_sines_size=100
 y_sines:
                 .bfor i in range(y_sines_size+num_columns)
 theta=float(i)/y_sines_size*2*pi
                 .byte floor(16+sin(theta)*16)%16
                 .endfor
+
+;-------------------------------------------------------------------------
+
+crtc_row_offsets:
+                .bfor i in range(num_visible_rows*2)
+                .byte (i%4)*48
+                .endfor
+
+;-------------------------------------------------------------------------
+
+BufferInfo: .struct _address,_fill_routine
+address: .word (\_address)
+crtc_address: .word (\_address)>>3
+fill_routine: .word (\_fill_routine)
+                .endstruct
+                
+; buffer_info: .macro address,fill_routine
+;                 .dstruct BufferInfo,(\address),(\address)>>3,(\fill_routine)
+;                 .endmacro
+                
+buffer_infos: .block
+a: .dstruct BufferInfo,display_buffers.a,fill_buffer_a
+b: .dstruct BufferInfo,display_buffers.b,fill_buffer_b
+c: .dstruct BufferInfo,display_buffers.c,fill_buffer_c
+                .endblock
                 
 ;-------------------------------------------------------------------------
 
                 .endsection code
+
+;-------------------------------------------------------------------------
+
+                .section unrolls
+
+fill_buffer_a:
+                tax
+                .scroll_unroll false,display_buffers.a
+                rts
+
+fill_buffer_b:
+                tax
+                .scroll_unroll false,display_buffers.b
+                rts
+
+fill_buffer_c:
+                tax
+                .scroll_unroll false,display_buffers.c
+                rts
+                
+                .endsection unrolls

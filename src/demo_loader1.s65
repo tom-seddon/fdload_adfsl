@@ -101,9 +101,9 @@ sta_fdload_byte: sta fdload_dest,y
                 sta romsel
                 
                 jsr fdload_load_file_contents
-                .word demo_scroller0_begin
+                .word demo_scroller1_begin
                 .byte $b0
-                .byte file_scroller0_bin
+                .byte file_scroller1_bin
 
                 .endblock
                 
