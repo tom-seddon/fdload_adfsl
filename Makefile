@@ -247,5 +247,5 @@ dist_scroller_0: _INTERMEDIATE:=$(BUILD)/dist_scroller
 dist_scroller_0:
 	$(_V)$(SHELLCMD) rm-tree "$(_INTERMEDIATE)"
 	$(_V)$(SHELLCMD) mkdir "$(_INTERMEDIATE)"
-	$(_V)cd "tests" && $(PYTHON) "dist_scroller.py" --output "$(BUILD)" --intermediate "$(_INTERMEDIATE)"
+	$(_V)cd "tests" && $(PYTHON) "dist_scroller.py" --output "$(BUILD)" --intermediate "$(_INTERMEDIATE)" $(if $(VERBOSE),--verbose)
 #	$(_V)ffmpeg -y -r 50 -i "$(_OUTPUT)/dist_scroller.%d.png" -pix_fmt yuv420p "$(BUILD)/dist_scroller.mp4"

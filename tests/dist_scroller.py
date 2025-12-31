@@ -5,6 +5,16 @@ import png
 ##########################################################################
 ##########################################################################
 
+g_verbose=False
+
+def pv(msg):
+    if g_verbose:
+        sys.stdout.write(msg)
+        sys.stdout.flush()
+
+##########################################################################
+##########################################################################
+
 def create_rgba_image(w,h):
     image=[]
     for y in range(h): image.append(w*[255,0,255,255])
@@ -116,6 +126,8 @@ def get_bbc_rgba(pixel,mapping=default_mapping):
             255)
 
 def main2(options):
+    global g_verbose;g_verbose=options.verbose
+    
     png_result=png.Reader(filename='geebeeyay_8x16.png').asRGBA()
     print('font: %dx%d'%(png_result[0],png_result[1]))
 
@@ -202,20 +214,22 @@ def main2(options):
             n*=2
         return int(n)
 
+    last_image_3=None
+
     def create_frame_image_3(frame_idx):
         assert glyph_height%char_row_height==0
         assert screen_height%char_row_height==0
         
         logical_width=screen_width+x_scale*2
 
+        if frame_idx==0:
+            print('logical_width=%d'%logical_width)
+            
         # render by repeatedly copying a single row that's 1 glyph
         # high
         image=create_rgba_image(logical_width,glyph_height)
 
         text_base_x=-screen_width+frame_idx
-
-        if frame_idx==0:
-            print('logical_width=%d'%logical_width)
 
         for y in range(glyph_height):
             for x in range(logical_width):
@@ -242,22 +256,54 @@ def main2(options):
                                      (y+y_offset)%glyph_height)
                 put_rgba_pixel(image,x,y,pixel)
             #blend_rgba_pixel(image,79,y,(255,255,255,128))
-
+            
         full_image=create_rgba_image(screen_width,screen_height)
-        num_rows=screen_height//char_row_height
-        for row in range(num_rows):
-            dest_y=row*char_row_height
-            x_theta=(frame_idx*2+row)%num_x_cycle_frames/num_x_cycle_frames*2*math.pi
-            x_offset=math.sin(x_theta)*x_scale
 
-            src_x=x_scale+x_offset
-            src_y=dest_y%glyph_height
+        nonlocal last_image_3
+        if last_image_3 is not None:
+            num_rows=screen_height//char_row_height
+            pv('\n')
+            for row in range(num_rows):
+                dest_y=row*char_row_height
+                x_theta=(frame_idx+row)%num_x_cycle_frames/num_x_cycle_frames*2*math.pi
+                x_offset=math.sin(x_theta)*x_scale
+                #x_offset=get_int_maybe_half_res(x_offset,True)
 
-            copy_rgba_block(full_image,0,dest_y,
-                            image,src_x,src_y,screen_width,char_row_height)
+                src_x=round(x_scale+x_offset)
+                assert src_x>=0
+
+                if src_x%2==0:
+                    src_image=last_image_3
+                    indicator=(255,0,0,255)
+                else:
+                    src_image=image
+                    indicator=(0,255,0,255)
+                src_x&=~1
+
+                src_y=dest_y%glyph_height
+                
+                pv('frame_idx=%d row=%d src_x=%d src_y=%d\n'%
+                   (frame_idx,
+                    row,
+                    src_x,
+                    src_y))
+
+                copy_rgba_block(full_image,0,dest_y,
+                                src_image,src_x,src_y,screen_width,char_row_height)
+
+                # for x in range(screen_width):
+                #     put_rgba_pixel(full_image,x,dest_y,indicator)
 
             # for x in range(screen_width):
             #     blend_rgba_pixel(full_image,x,dest_y,(255,255,255,128))
+
+        result={
+            '':full_image,
+            '.one_row':image,
+            '.last_one_row':last_image_3
+        }
+        
+        last_image_3=image
 
         # full_image=create_rgba_image(screen_width,screen_height)
         # for y in range(0,screen_height,glyph_height):
@@ -267,7 +313,7 @@ def main2(options):
         #         for x in range(screen_width):
         #             put_rgba_pixel(full_image,x,y,(255,255,255,128))
 
-        return {'':full_image,'.one_row':image}
+        return result
 
     def create_frame_image_2(frame_idx):
         # render starting from screen (x,y)
@@ -349,12 +395,14 @@ def main2(options):
     for frame_idx in range(num_frames):
         images=create_frame_image_3(frame_idx)
 
-        sys.stdout.write('\r[%-*.*s]'%(len(full_progress),int(frame_idx/(num_frames-1)*len(full_progress)),full_progress))
+        if not g_verbose:
+            sys.stdout.write('\r[%-*.*s]'%(len(full_progress),int(frame_idx/(num_frames-1)*len(full_progress)),full_progress))
 
         if options.intermediate_folder is not None:
             for name,image in images.items():
+                if image is None: continue
                 names.add(name)
-                image=resize_rgba_image(image)
+                if len(name)==0: image=resize_rgba_image(image)
 
                 output_path=os.path.join(options.intermediate_folder,
                                          'dist_scroller%s.%d.png'%(name,frame_idx))
@@ -382,6 +430,7 @@ def main(argv):
     parser=argparse.ArgumentParser()
     parser.add_argument('--intermediate',dest='intermediate_folder',metavar='FOLDER',help='''where to write intermediate files''')
     parser.add_argument('--output',dest='output_folder',metavar='FOLDER',help='''where to write output files''')
+    parser.add_argument('-v','--verbose',action='store_true',help='''be more verbose''')
 
     main2(parser.parse_args(argv))
 
