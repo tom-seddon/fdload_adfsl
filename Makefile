@@ -108,8 +108,8 @@ endif
 	$(_V)$(PYTHON) "bin/boot_builder.py" $(DEMO_DISK_BUILDER_ARGS) prepare --output-asm "$(BUILD)/demo_disk_files.generated.s65"
 
 # Build any part files.
-	$(_V)$(PYTHON3) "bin/make_bbc_font.py" -o "$(BUILD)/bbc_font.generated.s65" "data/utils.3.50.rom"
-	$(_V)$(PYTHON3) "bin/make_dist_scroller_font_data.py" --output-glyph-s65 "$(BUILD)/dist_scroller.glyphs.generated.s65" --output-text-s65 "$(BUILD)/dist_scroller.text.generated.s65"
+	$(_V)$(PYTHON) "bin/make_bbc_font.py" -o "$(BUILD)/bbc_font.generated.s65" "data/utils.3.50.rom"
+	$(_V)$(PYTHON) "bin/make_dist_scroller_font_data.py" --output-glyph-s65 "$(BUILD)/dist_scroller.glyphs.generated.s65" --output-text-s65 "$(BUILD)/dist_scroller.text.generated.s65"
 	$(_V)$(MAKE) _asm PC=demo_scroller0 EXTRACT_PRG=1
 	$(_V)$(MAKE) _asm PC=demo_scroller1 EXTRACT_PRG=1
 
