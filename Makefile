@@ -36,6 +36,13 @@ TASS_ARGS:=--case-sensitive -Wall --cbm-prg $(if $(VERBOSE),,--quiet) --long-bra
 ##########################################################################
 ##########################################################################
 
+# it's quite a lot quicker and the compression is ok. Worth having as
+# the default.
+ZX02_QUICK:=1
+
+##########################################################################
+##########################################################################
+
 PWD:=$(shell $(PYTHON) submodules/shellcmd.py/shellcmd.py realpath .)
 
 # How to run shellcmd.py from any folder.
@@ -63,7 +70,7 @@ endif
 
 BUILDER_ZX02_ARGS:=--zx02 "$(ZX02)" --zx02-cache "$(BUILD)/zx02_cache"
 
-ifdef ZX02_QUICK
+ifneq ($(ZX02_QUICK),0)
 BUILDER_ZX02_ARGS:=$(BUILDER_ZX02_ARGS) --zx02-quick
 endif
 

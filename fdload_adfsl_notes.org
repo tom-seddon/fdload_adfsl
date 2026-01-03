@@ -1079,8 +1079,24 @@ Since $F4 isn't getting updated, any ROM/paging info will be lost.
 
 https://bbc.godbolt.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/demo_disk.adl&autoboot&model=MasterADFS
 
+* previous prototypes
 
+- 5 scrollers :: https://bbc.godbolt.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/scroll-4x.ssd&autoboot&model=Master
+- roto zoom :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/rotozoom.ssd&autoboot&model=Master
+- palette-based text scroller :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/scroll-palette.ssd&autoboot&model=Master
 
-tom-seddon/256_bytes/07ac8a22e7e917a5683d4635d65935bbe0b07972/nova_2023/sotc.ssd&autoboot&model=Master
+Shadow RAM cutout plus big sprite:
+
+- static sprite, text behind :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/scroll-cutout-masked.ssd&autoboot&model=Master
+- moving sprite, text in front, "transparency" :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/scroll-cutout-moving.ssd&autoboot&model=Master
+- static sprite, text in front, "transparency" :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/scroll-cutout-transparency.ssd&autoboot&model=Master
+- static sprite, text in front :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/scroll-cutout.ssd&autoboot&model=Master
+
+Balls:
+
+- 7, spinning, solid colour :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/balls.ssd&autoboot&model=Master
+- 7, spinning, dithered :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/balls-dither.ssd&autoboot&model=Master
+- 7, animated, solid colour :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/balls-anim.ssd&autoboot&model=Master
+- 8, animated, solid colour :: https://bbc.xania.org/?&disc=https://raw.githubusercontent.com/tom-seddon/tom-seddon.github.io/483c0baf4d03cf71c203bd05aba8a9d974fa25e7/8balls.ssd&autoboot&model=Master
 
 * eof
