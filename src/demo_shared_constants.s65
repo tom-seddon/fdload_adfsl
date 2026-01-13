@@ -1,21 +1,14 @@
 ;-------------------------------------------------------------------------
 
 resident_base=$200
-                .logical resident_base+$80
-irq_handler_space: .fill 128
-                .endlogical
                 .logical resident_base
 fdload_init: .fill 2
                 .fill 2         ; space for BRKV
                 .fill 2         ; space for IRQ1V
 fdload_select_bank: .fill 2
-fdload_restore_bank: .fill 2
 irq_set_handler: .fill 2
 irq_reset_handler: .fill 2
-irq_copy_handler: .fill 2
-                .cerror *>irq_handler_space
                 .endlogical
-
                 
 ;-------------------------------------------------------------------------
 

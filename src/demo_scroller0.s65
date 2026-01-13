@@ -48,6 +48,11 @@ byte_4bpp: .function _left,_right
 
 ;-------------------------------------------------------------------------
 
+; where the IRQ routine goes in main RAM
+irq_main_ram_addr=$280
+                
+;-------------------------------------------------------------------------
+
                 .section zp
                 ;
 left_crtc_addr: .fill 2
@@ -203,9 +208,17 @@ store_clear_memory: stz $300,x
                 inc store_clear_memory+2
                 bpl clear_memory_loop
 
-                ldx #<handle_irq
-                ldy #>handle_irq
-                jsr irq_copy_handler
+                ldx #0
+copy_irq_routine_loop:
+                lda handle_irq,x
+                sta irq_main_ram_addr,x
+                inx
+                cpx #size(handle_irq)
+                bne copy_irq_routine_loop
+
+                ldx #<irq_main_ram_addr
+                ldy #>irq_main_ram_addr
+                jsr irq_set_handler
 
                 ; lda #$80|VIAIRQ.t1
                 ; sta system_via.ier
@@ -313,6 +326,7 @@ cycles_wait_12:
 ;-------------------------------------------------------------------------
 
 handle_irq: .proc
+                .logical irq_main_ram_addr
                 stx reldx+1
 
                 ; there's only one source of IRQs here.
@@ -377,9 +391,8 @@ handle_penultimate_prepare_last:
                 sta system_via.t1l_h
 
                 bra done
-                
+                .endlogical
                 .endproc
-                .cerror size(handle_irq)>size(irq_handler_space)
 
 ;-------------------------------------------------------------------------
 

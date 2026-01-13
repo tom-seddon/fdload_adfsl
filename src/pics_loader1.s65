@@ -114,17 +114,11 @@ init_text: .block
                 .endblock
 
 fdload_select_bank:
-                ldy romsel
                 ldx #fdload_rom_bank
                 stx $f4
                 stx romsel
                 rts
 
-fdload_restore_bank:
-                sty $f4
-                sty romsel
-                rts
-                
                 .endsection code
 
 ;-------------------------------------------------------------------------

@@ -663,15 +663,18 @@ jmp_load_address: jmp $ffff
                 .if fdload_banked_version
 
 file_read_init:
-                jsr fdload_select_bank
+                ldx romsel
                 phx
-                phy
+                ldx acccon
+                phx
+                jsr fdload_select_bank
 
                 jsr file_read_init_2
 
-                ply
                 plx
-                jsr fdload_restore_bank
+                stx acccon
+                plx
+                stx romsel
 
                 rts
 
