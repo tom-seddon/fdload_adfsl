@@ -5,7 +5,6 @@ resident_base=$200
 fdload_init: .fill 2
                 .fill 2         ; space for BRKV
                 .fill 2         ; space for IRQ1V
-fdload_select_bank: .fill 2
 irq_set_handler: .fill 2
 irq_reset_handler: .fill 2
                 .endlogical
@@ -34,4 +33,11 @@ demo_scroller1_end=$c000
 ;-------------------------------------------------------------------------
 
                 .include "../build/demo_disk_files.generated.s65"
+
+;-------------------------------------------------------------------------
+
+fdload_select_bank: .macro
+                lda #fdload_rom_bank
+                sta romsel
+                .endmacro
                 

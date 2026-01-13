@@ -663,20 +663,25 @@ jmp_load_address: jmp $ffff
                 .if fdload_banked_version
 
 file_read_init:
-                ldx romsel
-                phx
-                ldx acccon
-                phx
-                jsr fdload_select_bank
+                tay             ; save file index
+                
+                lda romsel
+                pha
+                lda acccon
+                pha
+
+                .fdload_select_bank
+
+                tya             ; restore file index
 
                 jsr file_read_init_2
 
-                plx
-                stx acccon
-                plx
-                stx romsel
+                pla
+                sta acccon
+                pla
+                sta romsel
 
-                rts
+                rts 
 
                 .else
 

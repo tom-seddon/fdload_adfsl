@@ -32,6 +32,12 @@ fdload_code_end:
 *=loader1_base+loader1_size-16
                 .text loader1_guid
 
+fdload_select_bank: .macro
+                lda #fdload_rom_bank
+                sta $f4
+                sta romsel
+                .endmacro
+
 ;-------------------------------------------------------------------------
 
                 .section zp
@@ -51,7 +57,7 @@ print_init_text_loop:
                 bne print_init_text_loop
 
                 ; copy fdload code into ROM
-                jsr fdload_select_bank
+                .fdload_select_bank
                 ldx #$08        ; 8 pages = 2 KB
                 ldy #0
 copy_fdload_loop:
@@ -112,12 +118,6 @@ init_text: .block
                 .endblock
 
                 .endblock
-
-fdload_select_bank:
-                ldx #fdload_rom_bank
-                stx $f4
-                stx romsel
-                rts
 
                 .endsection code
 

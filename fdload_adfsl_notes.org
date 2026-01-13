@@ -162,10 +162,12 @@ main memory on each call to =fdload.init=.
 =fdload_working_code= is the address to which =fdload.init= should
 copy the working code. 
 
-=fdload_select_bank= selects the banked region that fdload is stored
-in, giving access to the fdload_init_code region. The previous values
-of ACCCON and ROMSEL are saved beforehand and will be restored.
-Preserve A and C.
+=fdload_select_bank= is a macro that expands to code to select the
+banked region that fdload is stored in, giving access to the
+fdload_init_code region. The assumption is that this will just set
+specific ACCCON and ROMSEL bits (and won't be executed anywhere where
+this would cause a problem). The previous values of ACCCON and ROMSEL
+are saved beforehand and will be restored. Must preserve Y and C.
 
 TODO: this naming sucks.
 
@@ -753,8 +755,8 @@ partly reserved.
 
 =fdload_select_bank= needs to be in main RAM.
 
-So that covers up to about $210? And $0258 is already reserved. Might
-as well book $0211-$0257? Some of that stuff could go in page $01, but
+So that covers up to about $209? And $0258 is already reserved. Might
+as well book $0209-$0257? Some of that stuff could go in page $01, but
 it'd be nice to leave the entire stack free.
 
 Page 2 memory use:
@@ -767,12 +769,10 @@ Page 2 memory use:
 | $0203    | BRKV MSB               | "                                |
 | $0204    | IRQ1V LSB              |                                  |
 | $0205    | IRQ1V MSB              |                                  |
-| $0206    | fdload_select_bank     | resident entry point             |
+| $0206    | irq_set_handler        | resident entry point             |
 | $0207    |                        |                                  |
-| $0208    | irq_set_handler        | resident entry point             |
-| $0209    |                        |                                  |
-| $020a    | irq_reset_handler      | resident entry point             |
-| $020b... |                        | any resident stuff               |
+| $0208    | irq_reset_handler      | resident entry point             |
+| $0209... |                        | any resident stuff               |
 | $0258    | MOS memory clear flags |                                  |
 |----------+------------------------+----------------------------------|
 | $0259... |                        |                                  |
@@ -782,11 +782,7 @@ Page 2 memory use:
 *** =fdload_init=
 
 Entry point for =fdload.init= (see above) to copy fdload routines into
-main RAM and make fdload entry points available.
-
-*** =fdload_select_bank=
-
-fdload callback.
+main RAM and make additional fdload entry points available.
 
 *** =irq_set_handler=
 

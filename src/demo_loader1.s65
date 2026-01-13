@@ -75,7 +75,7 @@ copy_resident_loop:
 
                 plp
 
-                jsr fdload_select_bank
+                .fdload_select_bank
                 
                 ldx #8          ; 2 KB
                 ldy #0
@@ -101,9 +101,9 @@ sta_fdload_byte: sta fdload_dest,y
                 sta romsel
                 
                 jsr fdload_load_file_contents
-                .word demo_scroller0_begin
+                .word demo_scroller1_begin
                 .byte $b0
-                .byte file_scroller0_bin
+                .byte file_scroller1_bin
 
                 .endblock
                 
@@ -116,8 +116,6 @@ sta_fdload_byte: sta fdload_dest,y
                 bra fdload_init_2
                 .word 0         ; BRKV
                 .word null_irq  ; IRQ1V
-                .cerror *!=fdload_select_bank
-                bra fdload_select_bank_2
                 .cerror *!=irq_set_handler
                 bra irq_set_handler_2
                 .cerror *!=irq_reset_handler
@@ -127,16 +125,12 @@ fdload_init_2:
                 pha
                 lda acccon
                 pha
-                jsr fdload_select_bank_2
+                .fdload_select_bank
                 jsr fdload.init
                 pla
                 sta acccon
                 pla
                 sta romsel
-                rts
-fdload_select_bank_2:
-                ldx #fdload_rom_bank
-                stx romsel
                 rts
 irq_reset_handler_2:
                 ldy #>null_irq
