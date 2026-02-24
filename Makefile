@@ -218,7 +218,8 @@ _asm:
 _tom_emacs:
 #	$(_V)$(MAKE) _tom_build_and_test
 #	$(_V)$(MAKE) dist_scroller_0 PYTHON=python3.14
-	$(_V)$(MAKE) chequerboard_prototype PYTHON=python3.14
+#	$(_V)$(MAKE) chequerboard_prototype PYTHON=python3.14
+	$(_V)$(MAKE) cylinder_text_prototype PYTHON=python3.14
 
 ##########################################################################
 ##########################################################################
@@ -271,3 +272,13 @@ chequerboard_prototype:
 	$(_V)$(SHELLCMD) rm-tree "$(_INTERMEDIATE)"
 	$(_V)$(SHELLCMD) mkdir "$(_INTERMEDIATE)"
 	$(_V)cd "tests" && $(PYTHON) "chequerboard.py" --output "$(BUILD)" --intermediate "$(_INTERMEDIATE)" $(if $(VERBOSE),--verbose)
+
+##########################################################################
+##########################################################################
+
+.PHONY:cylinder_text_prototype
+cylinder_text_prototype: _INTERMEDIATE:=$(BUILD)/cylinder_text
+cylinder_text_prototype:
+	$(_V)$(SHELLCMD) rm-tree "$(_INTERMEDIATE)"
+	$(_V)$(SHELLCMD) mkdir "$(_INTERMEDIATE)"
+	$(_V)cd "tests" && $(PYTHON) "cylinder_text.py" --output "$(BUILD)" --intermediate "$(_INTERMEDIATE)" $(if $(VERBOSE),--verbose)
