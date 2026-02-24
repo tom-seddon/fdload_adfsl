@@ -6,7 +6,8 @@ MAKEFLAGS+=--no-print-directory
 ifeq ($(OS),Windows_NT)
 PYTHON:=py -3
 UNAME:=Windows_NT
-TASS:=$(PWD)/bin/64tass.exe
+# 64tass.exe path gets set later, once the project working folder's
+# path is known.
 else
 UNAME:=$(shell uname -s)
 PYTHON:=/usr/bin/python3
@@ -72,6 +73,13 @@ BUILDER_ZX02_ARGS:=--zx02 "$(ZX02)" --zx02-cache "$(BUILD)/zx02_cache"
 
 ifneq ($(ZX02_QUICK),0)
 BUILDER_ZX02_ARGS:=$(BUILDER_ZX02_ARGS) --zx02-quick
+endif
+
+##########################################################################
+##########################################################################
+
+ifeq ($(OS),Windows_NT)
+TASS:=$(PWD)/bin/64tass.exe
 endif
 
 ##########################################################################
@@ -216,10 +224,10 @@ _asm:
 
 .PHONY: _tom_emacs
 _tom_emacs:
-#	$(_V)$(MAKE) _tom_build_and_test
+	$(_V)$(MAKE) _tom_build_and_test
 #	$(_V)$(MAKE) dist_scroller_0 PYTHON=python3.14
 #	$(_V)$(MAKE) chequerboard_prototype PYTHON=python3.14
-	$(_V)$(MAKE) cylinder_text_prototype PYTHON=python3.14
+#	$(_V)$(MAKE) cylinder_text_prototype PYTHON=python3.14
 
 ##########################################################################
 ##########################################################################
