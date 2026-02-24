@@ -177,7 +177,7 @@ _adfs_image:
 	$(_V)$(SHELLCMD) copy-file "$(BUILD)/$(PC_IMAGE)" "$(BEEB_BUILD)/L.$(BBC_IMAGE)"
 
 # Create *EXEC file for quickly writing the disk image.
-	$(_V)$(SHELLCMD) echo-bytes -o "$(BEEB_BUILD)/!.$(BBC_IMAGE)" -e _ "CHAIN_22::BEEBLINK:0._24.IMAGER_22_0dWA0AA:Z.L.$(BBC_IMAGE)_0d"
+	$(_V)$(SHELLCMD) echo-bytes -o "$(BEEB_BUILD)/!.$(BBC_IMAGE)" -e _ "CHAIN_22::BEEBLINK:0._24.IMAGER_22_0dW0AAA:Z.L.$(BBC_IMAGE)_0d"
 
 ##########################################################################
 ##########################################################################
